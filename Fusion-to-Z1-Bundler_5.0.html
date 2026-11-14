@@ -1,0 +1,2057 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fusion to Z1 Bundler</title>
+<script>try { var t = localStorage.getItem('z1b.theme'); if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+<style>
+/* Layout: what is in the bundle (left) · preview (centre) · how it is written (right).
+   Look: monochrome workshop UI. Colour is reserved for tools and for status, never for decoration. */
+:root {
+  color-scheme: dark;
+  --bg: #0e0f11; --panel: #151719; --raised: #1e2125; --sunk: #0a0b0d; --bar: #151719;
+  --line: #24272c; --line2: #363b43; --ink: #eceef1; --ink2: #9ba2ad; --ink3: #6a717c;
+  --accent: #eceef1; --on-accent: #0e0f11; --accent-soft: #23272d;
+  --ok: #4cc38a; --warn: #e8a94a; --err: #ff7b72;
+  --warn-soft: #2b2315; --err-soft: #321e1d; --note-soft: #1a1d21;
+  --shadow: 0 16px 48px rgba(0, 0, 0, .5);
+  --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #efefec; --panel: #fafaf8; --raised: #ffffff; --sunk: #e9e9e5; --bar: #fafaf8;
+  --line: #dfdfda; --line2: #c8c8c1; --ink: #17181a; --ink2: #5c6068; --ink3: #8a8e96;
+  --accent: #17181a; --on-accent: #ffffff; --accent-soft: #e6e6e1;
+  --ok: #1d7a4a; --warn: #93560a; --err: #b0251c;
+  --warn-soft: #f9eed9; --err-soft: #fae5e3; --note-soft: #f1f1ed;
+  --shadow: 0 16px 40px rgba(20, 20, 15, .16);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--ui); overflow: hidden; }
+button, select, input { font: inherit; color: inherit; }
+h2, h3, p { margin: 0; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.f { fill: currentColor; stroke: none; }
+.mut { color: var(--ink2); }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sp { flex: 1 1 auto; }
+
+/* ---------- controls ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; background: var(--raised); border: 1px solid var(--line2); border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--ink3); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--ink2); }
+.btn.ghost:hover, .btn.ghost[aria-expanded="true"] { color: var(--ink); background: var(--raised); }
+.btn.icon { width: 32px; padding: 0; }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12px; } .btn.sm.icon { width: 26px; padding: 0; }
+.btn.wide { width: 100%; }
+.btn.on { background: var(--accent-soft); border-color: var(--line2); color: var(--ink); }
+.btn.danger:hover { color: var(--err); border-color: var(--err); }
+.primary { height: 40px; padding: 0 18px 0 14px; background: var(--accent); color: var(--on-accent); border: 0; border-radius: 10px; font-weight: 700; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; white-space: nowrap; }
+.primary .t { display: grid; text-align: left; line-height: 1.15; } .primary small { font-weight: 500; font-size: 11px; opacity: .7; }
+.primary:hover:not(:disabled) { opacity: .9; } .primary:disabled { opacity: .35; cursor: not-allowed; }
+.pick { position: relative; overflow: hidden; } .pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; font-size: 0; }
+input[type=text], input[type=number], select { height: 32px; background: var(--sunk); border: 1px solid var(--line2); border-radius: 8px; padding: 0 9px; min-width: 0; width: 100%; }
+input[type=text]:hover, input[type=number]:hover, select:hover { border-color: var(--ink3); }
+input:disabled { opacity: .5; }
+input.sw, .swi { appearance: none; -webkit-appearance: none; width: 36px; height: 20px; border-radius: 999px; background: var(--line2); position: relative; cursor: pointer; flex: none; margin: 0; transition: background .12s; display: inline-block; border: 0; }
+input.sw::after, .swi::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); transition: transform .12s; }
+input.sw:checked, [aria-pressed="true"] > .swi { background: var(--ink); }
+input.sw:checked::after, [aria-pressed="true"] > .swi::after { transform: translateX(16px); }
+.seg { display: inline-flex; background: var(--sunk); border: 1px solid var(--line2); border-radius: 9px; padding: 2px; gap: 2px; }
+.seg button { height: 26px; padding: 0 11px; border: 0; background: transparent; border-radius: 7px; cursor: pointer; color: var(--ink2); display: inline-flex; align-items: center; gap: 6px; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 0 0 1px var(--line2); font-weight: 600; }
+.badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--warn); color: #1a1408; font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; }
+.count { color: var(--ink3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.kbd { font: 11.5px var(--mono); background: var(--sunk); border: 1px solid var(--line2); border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; }
+
+/* ---------- frame ---------- */
+.app { display: grid; grid-template-rows: 56px minmax(0, 1fr); height: 100%; }
+.top { display: flex; align-items: center; gap: 8px; padding: 0 12px 0 16px; background: var(--bar); border-bottom: 1px solid var(--line); min-width: 0; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+.brand svg { width: 26px; height: 26px; }
+.crumb { color: var(--ink3); margin: 0 2px 0 6px; }
+input.title { width: min(320px, 28vw); height: 34px; font-size: 14px; font-weight: 600; background: transparent; border-color: transparent; text-overflow: ellipsis; }
+input.title:hover { border-color: var(--line2); background: transparent; } input.title:focus { background: var(--sunk); border-color: var(--line2); }
+.health { gap: 8px; border-radius: 999px; padding: 0 12px 0 10px; }
+.health .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.health.warn .dot { background: var(--warn); } .health.err .dot { background: var(--err); }
+.health.err { border-color: var(--err); }
+
+.work { display: grid; grid-template-columns: 320px minmax(0, 1fr) var(--rw, 320px); min-height: 0; }
+.work.no-right { --rw: 0px; } .work.no-right .right { display: none; }
+.left, .right { background: var(--panel); overflow: auto; min-width: 0; min-height: 0; }
+.left { border-right: 1px solid var(--line); } .right { border-left: 1px solid var(--line); }
+.center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto 7px var(--gh, 230px); min-width: 0; min-height: 0; }
+.center.gclosed { grid-template-rows: minmax(0, 1fr) auto; } .center.gclosed .split, .center.gclosed .gdock { display: none; }
+.noprev .center { grid-template-rows: minmax(0, 1fr); }
+.noprev .transport, .noprev .split, .noprev .gdock, .noprev .vbar, .noprev .vhint, .noprev .legend, .noprev .zcv, .noprev .hud { display: none !important; }
+
+/* ---------- left: bundle contents ---------- */
+.ph { display: flex; align-items: center; gap: 8px; padding: 16px 12px 8px 16px; position: sticky; top: 0; background: var(--panel); z-index: 2; }
+.ph h2 { font-size: 13px; font-weight: 650; }
+.ph .hint { font-size: 12px; color: var(--ink3); }
+.empty { margin: 4px 16px 12px; color: var(--ink2); }
+.oplist { padding: 0 8px 4px; }
+.op { border-radius: 10px; border: 1px solid transparent; margin-bottom: 2px; position: relative; outline-offset: -2px; }
+.op:hover { background: var(--raised); }
+.op.sel { background: var(--raised); border-color: var(--line2); }
+.op-h { display: grid; grid-template-columns: 12px 16px 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 8px 8px 6px; cursor: pointer; }
+.op.off .op-h > :not(input) { opacity: .45; }
+.op.drag { opacity: .3; }
+.op.over::before { content: ""; position: absolute; left: 6px; right: 6px; top: -2px; height: 3px; border-radius: 2px; background: var(--ink); }
+.op.now::after { content: ""; position: absolute; left: -1px; top: 9px; height: 22px; width: 3px; border-radius: 2px; background: var(--c, var(--ink)); }
+.grip { width: 12px; height: 16px; cursor: grab; opacity: .35; background: radial-gradient(circle, currentColor 1.1px, transparent 1.4px) 0 0 / 6px 6px; }
+.op:hover .grip { opacity: .8; }
+.op input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--ink); margin: 0; cursor: pointer; }
+.seq { font-variant-numeric: tabular-nums; color: var(--ink2); font-weight: 650; text-align: center; }
+.nm { min-width: 0; } .nm b, .nm small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .nm b { font-weight: 600; } .nm small { color: var(--ink2); font-size: 12px; }
+.op.failed .nm small, .op.failed .seq { color: var(--err); }
+.chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; border: 1.5px solid var(--c, var(--ink3)); background: transparent; font-size: 11.5px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.chip:hover { background: color-mix(in srgb, var(--c, var(--ink3)) 18%, transparent); }
+.chgline { display: flex; align-items: center; gap: 8px; margin: 3px 10px 5px; font-size: 11px; color: var(--ink3); white-space: nowrap; }
+.chgline::before, .chgline::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.chgline i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.opd { padding: 2px 10px 10px 10px; cursor: default; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 12px; }
+.kv dt { color: var(--ink2); } .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.acts { display: flex; gap: 6px; margin-top: 10px; } .acts .sp { flex: 1; }
+
+.toollist { padding: 0 8px 20px; }
+.tl { border-radius: 10px; border: 1px solid transparent; margin-bottom: 2px; }
+.tl:hover, .tl.open { background: var(--raised); } .tl.open { border-color: var(--line2); } .tl.clash { border-color: var(--err); }
+.tl-h { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 14px; gap: 10px; align-items: center; width: 100%; padding: 8px 8px 8px 10px; border: 0; background: transparent; text-align: left; cursor: pointer; border-radius: 10px; }
+.tl-h .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
+.tl-h svg { color: var(--ink3); transition: transform .12s; width: 14px; height: 14px; } .tl.open .tl-h svg { transform: rotate(90deg); }
+.flag { font-size: 11px; font-weight: 650; color: var(--warn); } .flag.err { color: var(--err); }
+.tl-b { padding: 2px 10px 12px 32px; display: grid; gap: 8px; }
+.tl-b .two { display: grid; grid-template-columns: minmax(0, 1fr) 68px; gap: 8px; }
+.f { display: grid; gap: 3px; } .f > span { font-size: 12px; color: var(--ink2); }
+.tl-b .msg { font-size: 12px; color: var(--ink2); } .tl-b .msg.err { color: var(--err); }
+
+/* ---------- centre: preview ---------- */
+.vstage { position: relative; background: var(--sunk); overflow: hidden; min-height: 0; }
+.vstage canvas#vcv { position: absolute; left: 0; top: 0; cursor: grab; touch-action: none; display: block; } .vstage canvas#vcv.drag { cursor: grabbing; }
+.zcv { position: absolute; right: 0; top: 0; width: 44px; height: 100%; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 70%, transparent); }
+.vbar { position: absolute; left: 12px; top: 12px; right: 56px; display: flex; gap: 8px; align-items: center; pointer-events: none; }
+.vbar > * { pointer-events: auto; } .vbar .seg, .vbar .btn { background-color: color-mix(in srgb, var(--panel) 92%, transparent); }
+.vhint { position: absolute; left: 12px; top: 54px; font-size: 12px; color: var(--ink2); pointer-events: none; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; white-space: nowrap; }
+.hud { position: absolute; right: 56px; bottom: 12px; text-align: right; font: 12px/1.5 var(--mono); background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; pointer-events: none; max-width: calc(100% - 200px); }
+.hud b { font-family: var(--ui); }
+.legend { position: absolute; left: 100px; bottom: 14px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; max-width: calc(100% - 420px); font-size: 11.5px; color: var(--ink2); }
+.legend .bar2 { width: 150px; height: 9px; border-radius: 5px; border: 1px solid var(--line2); }
+.legend .lc { display: inline-flex; align-items: center; gap: 5px; background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px 1px 6px; color: var(--ink); } .legend .lc i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); display: inline-block; }
+.vempty, .vnone { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; overflow: auto; }
+.dz { width: min(540px, 100%); text-align: center; border: 1.5px dashed var(--line2); border-radius: 22px; padding: 40px 36px 30px; background: var(--panel); display: grid; gap: 10px; justify-items: center; }
+.dz .big { width: 52px; height: 52px; border-radius: 16px; background: var(--raised); border: 1px solid var(--line2); display: grid; place-items: center; margin-bottom: 6px; } .dz .big svg { width: 24px; height: 24px; }
+.dz h2 { font-size: 19px; letter-spacing: -.015em; } .dz p { color: var(--ink2); max-width: 400px; }
+.dz .go { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; } .dz .primary { height: 38px; padding: 0 16px; }
+.steps { display: flex; gap: 0; margin: 22px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); list-style: none; width: 100%; text-align: left; }
+.steps li { flex: 1; display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: 12px; color: var(--ink2); padding-right: 10px; }
+.steps b { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line2); display: grid; place-items: center; font-size: 11px; color: var(--ink); }
+.vnone { color: var(--ink2); text-align: center; }
+
+.transport { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bar); border-top: 1px solid var(--line); min-width: 0; }
+.play { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; cursor: pointer; flex: none; }
+.play:hover { opacity: .9; }
+.tline { position: relative; flex: 1 1 auto; height: 26px; min-width: 60px; }
+.tline .track { position: absolute; left: 0; right: 0; top: 9px; height: 8px; border-radius: 4px; background: var(--line2); }
+.tline input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.tline input::-webkit-slider-runnable-track { background: transparent; height: 26px; } .tline input::-moz-range-track { background: transparent; }
+.tline input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 10px; height: 24px; margin-top: 1px; border-radius: 5px; background: var(--ink); border: 2px solid var(--bar); }
+.tline input::-moz-range-thumb { width: 6px; height: 20px; border-radius: 5px; background: var(--ink); border: 2px solid var(--bar); }
+.tm { font: 12px var(--mono); color: var(--ink2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.speedsel { width: 78px; }
+.split { background: var(--line); cursor: row-resize; position: relative; touch-action: none; } .split:hover, .split.act { background: var(--ink3); }
+.split::after { content: ""; position: absolute; left: 50%; top: 2px; width: 36px; height: 3px; margin-left: -18px; border-radius: 2px; background: var(--line2); }
+.gdock { display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+.gh { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--line); flex: none; }
+.gh h3 { font-size: 13px; font-weight: 650; }
+.gh select { width: auto; height: 26px; max-width: 280px; }
+.gh label { display: inline-flex; align-items: center; gap: 7px; color: var(--ink2); }
+pre.code { margin: 0; flex: 1 1 auto; min-height: 0; overflow: hidden; background: var(--sunk); font: 12px/18px var(--mono); padding: 0; }
+.ln { display: block; white-space: pre; cursor: pointer; padding-right: 12px; height: 18px; } .ln:hover { background: var(--accent-soft); }
+.ln i { display: inline-block; width: 58px; padding-right: 14px; text-align: right; color: var(--ink3); font-style: normal; user-select: none; }
+.ln.hl { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--ink); } .ln.dim { color: var(--ink3); } .ln.rp { color: var(--ink2); } .ln.mc { color: var(--warn); }
+
+/* ---------- right: settings ---------- */
+.tabs { position: sticky; top: 0; z-index: 3; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.tabs .seg { display: flex; } .tabs .seg button { flex: 1; justify-content: center; height: 28px; }
+.pane { padding: 0 16px 28px; }
+.grp { padding: 16px 0 12px; border-bottom: 1px solid var(--line); } .grp:last-child { border-bottom: 0; }
+.grp > h3 { font-size: 13px; font-weight: 650; margin-bottom: 6px; }
+.grp > .d { color: var(--ink2); font-size: 12px; margin-bottom: 8px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 7px 0; }
+.row > label { font-weight: 500; } .row .d { grid-column: 1 / -1; color: var(--ink2); font-size: 12px; }
+.row .ctl { display: flex; align-items: center; gap: 6px; } .row .ctl input[type=number] { width: 84px; } .row .ctl select { width: auto; max-width: 170px; }
+.row.col { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.row.chg > label::after { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); margin-left: 7px; vertical-align: middle; }
+.row.sub { padding-left: 14px; border-left: 2px solid var(--line2); margin-left: 2px; }
+.stock { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } .stock label { display: grid; gap: 3px; font-size: 12px; color: var(--ink2); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px; padding: 4px 0; }
+.stats div { display: grid; } .stats b { font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; } .stats span { font-size: 11.5px; color: var(--ink2); }
+.fname { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.advnote { margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--note-soft); color: var(--ink2); font-size: 12px; }
+.advnote i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); margin: 0 2px; vertical-align: middle; }
+
+/* ---------- overlays ---------- */
+.veil { position: fixed; inset: 0; z-index: 80; display: none; place-content: center; text-align: center; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: blur(2px); }
+.veil.on { display: grid; } .veil div { padding: 40px 70px; border: 2px dashed var(--ink); border-radius: 22px; font-size: 18px; font-weight: 650; background: var(--panel); }
+.pop { position: fixed; z-index: 60; min-width: 220px; max-width: min(400px, calc(100vw - 16px)); max-height: calc(100vh - 80px); overflow: auto; background: var(--raised); border: 1px solid var(--line2); border-radius: 14px; padding: 6px; box-shadow: var(--shadow); }
+.pop.pad { padding: 14px 16px; width: 380px; }
+.pop h3 { font-size: 13px; font-weight: 650; margin-bottom: 8px; }
+.mi { display: flex; gap: 10px; align-items: center; width: 100%; min-height: 34px; padding: 0 10px; border: 0; background: transparent; border-radius: 9px; cursor: pointer; text-align: left; }
+.mi:hover { background: var(--accent-soft); } .mi svg { color: var(--ink2); } .mi .sp { flex: 1; }
+.mi.danger:hover { color: var(--err); } .mi.danger:hover svg { color: var(--err); }
+.msep { height: 1px; background: var(--line); margin: 6px 4px; }
+.mlabel { padding: 6px 10px 4px; font-size: 12px; color: var(--ink2); }
+.pop .mrow { padding: 2px 10px 8px; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.checks li { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; padding: 8px 10px; border-radius: 9px; background: var(--note-soft); font-size: 12.5px; }
+.checks li.warn { background: var(--warn-soft); } .checks li.err { background: var(--err-soft); }
+.checks .tg { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink2); padding-top: 1px; } .warn .tg { color: var(--warn); } .err .tg { color: var(--err); }
+.allclear { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 9px; background: var(--note-soft); } .allclear svg { color: var(--ok); }
+details.notes { margin-top: 10px; } details.notes summary { cursor: pointer; color: var(--ink2); padding: 6px 2px; } details.notes summary:hover { color: var(--ink); } details.notes .checks { margin-top: 6px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; margin: 0; } .keys dd { margin: 0; color: var(--ink2); }
+.toast { position: fixed; z-index: 90; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; background: var(--ink); color: var(--bg); border-radius: 11px; padding: 10px 16px; box-shadow: var(--shadow); max-width: 90vw; font-weight: 500; }
+.toast button { border: 0; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; padding: 0; }
+
+/* ---------- narrow screens: one scrolling column ---------- */
+@media (max-width: 1080px) {
+  body { overflow: auto; } .app { display: block; height: auto; }
+  .top { position: sticky; top: 0; z-index: 20; flex-wrap: wrap; padding: 8px 12px; height: auto; } .top .hide-s { display: none; }
+  .work { display: flex; flex-direction: column; } .work > * { width: 100%; min-width: 0; }
+  .center { order: -1; grid-template-rows: 62vh auto 7px 260px; } .center.gclosed { grid-template-rows: 62vh auto; } .noprev .center { grid-template-rows: 70vh; }
+  .left, .right { overflow: visible; border: 0; border-top: 1px solid var(--line); } .ph, .tabs { position: static; }
+  .legend { left: 12px; bottom: 56px; max-width: calc(100% - 24px); } .hud { max-width: calc(100% - 70px); } .vhint { display: none; }
+  .transport { flex-wrap: wrap; } .tline { order: 9; flex: 1 1 100%; }
+}
+@media (max-width: 620px) { .primary small { display: none; } .brand span, .crumb { display: none; } .tm { display: none; } .steps { display: none; } input.title { width: 100%; order: 9; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M7 5v14M19 5.5v13L9 12z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M17 5v14M5 5.5v13L15 12z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6m0 0l-5 5m5-5l5 5"/></symbol>
+  <symbol id="i-dn" viewBox="0 0 24 24"><path d="M12 5v13m0 0l-5-5m5 5l5-5"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M4 7h12M4 12h9M4 17h5M18 9v10m0 0l-3-3m3 3l3-3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+</svg>
+
+<div class="app noprev" id="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6"/><path d="M6 8h4c3 0 3 4 6 4M6 16h4c3 0 3-4 6-4M16 12h2.5"/></svg>
+      <span>Z1 Bundler</span>
+    </div>
+    <span class="crumb" aria-hidden="true">/</span>
+    <input type="text" class="title" id="s-project" aria-label="Project name" placeholder="Untitled job" spellcheck="false" title="Project name. Used in the header and the file name.">
+    <div class="sp"></div>
+    <button id="health" class="btn health" type="button" data-pop="checks-pop" aria-haspopup="dialog" hidden><span class="dot"></span><span id="health-t">Ready</span></button>
+    <button id="btn-right" class="btn icon ghost" type="button" aria-pressed="true" title="Show or hide the settings" aria-label="Settings panel"><svg class="i"><use href="#i-sliders"/></svg></button>
+    <button class="btn icon ghost" type="button" data-pop="more-pop" aria-haspopup="menu" title="More" aria-label="More"><svg class="i"><use href="#i-more"/></svg></button>
+    <button id="dl" class="primary" type="button" disabled><svg class="i"><use href="#i-down"/></svg><span class="t"><span>Export .nc</span><small id="dl-sum">Add files first</small></span></button>
+  </header>
+
+  <div class="work" id="work">
+    <!-- left: what is in the bundle -->
+    <aside class="left" aria-label="Bundle contents">
+      <div class="ph"><h2>Toolpaths</h2><span class="count" id="n-ops"></span><span class="hint" id="ops-hint" hidden>in run order</span><div class="sp"></div>
+        <button id="ops-more" class="btn icon ghost sm" type="button" data-pop="ops-pop" aria-haspopup="menu" title="List actions" aria-label="List actions" hidden><svg class="i"><use href="#i-more"/></svg></button>
+        <label class="btn sm pick" title="Add Fusion .cnc files"><svg class="i"><use href="#i-plus"/></svg>Add<input class="filepick" type="file" multiple accept=".cnc,.nc,.txt,.tap,.gcode,.html,.htm" aria-label="Add files"></label></div>
+      <div class="oplist" id="ops" aria-label="Toolpaths in run order"></div>
+      <div id="tools-sec" hidden>
+        <div class="ph"><h2>Tools</h2><span class="count" id="n-tools"></span><span class="hint">Fusion tool → Z1 slot</span></div>
+        <div class="toollist" id="tools"></div>
+      </div>
+    </aside>
+
+    <!-- centre: preview -->
+    <main class="center gclosed" id="viewer" tabindex="-1">
+      <section class="vstage" id="vstage" tabindex="0" aria-label="Toolpath preview. Left-drag rotates, right-drag pans, wheel zooms. Space plays or pauses.">
+        <canvas id="vcv"></canvas>
+        <canvas id="zcv" class="zcv" aria-label="Tool height against stock"></canvas>
+        <div class="vbar">
+          <div class="seg" role="group" aria-label="View">
+            <button type="button" data-view="iso" aria-pressed="true">3D</button><button type="button" data-view="top" aria-pressed="false">Top</button><button type="button" data-view="front" aria-pressed="false">Front</button><button type="button" data-view="right" aria-pressed="false">Side</button>
+          </div>
+          <button id="vfit" class="btn" type="button" title="Fit to window (F, or double-click the view)">Fit</button>
+          <div class="sp"></div>
+          <button class="btn" type="button" data-pop="disp-pop" aria-haspopup="dialog"><svg class="i"><use href="#i-eye"/></svg>Display</button>
+        </div>
+        <div class="vhint" id="vhint">Drag to rotate · Right-drag to pan · Scroll to zoom</div>
+        <div class="legend" id="vlegend"></div>
+        <div class="hud" id="hud"></div>
+        <div class="vempty" id="vempty">
+          <div class="dz">
+            <div class="big"><svg class="i"><use href="#i-drop"/></svg></div>
+            <h2>Drop your Fusion files here</h2>
+            <p>One .cnc file per operation, posted from Fusion with the Carvera post. They are combined into a single Makera Z1 program with tool changes.</p>
+            <div class="go">
+              <label class="primary pick"><svg class="i"><use href="#i-plus"/></svg>Choose files<input class="filepick" type="file" multiple accept=".cnc,.nc,.txt,.tap,.gcode,.html,.htm" aria-label="Choose files"></label>
+              <button class="btn" data-do="example" type="button" style="height:38px">Try the example</button>
+            </div>
+            <ol class="steps"><li><b>1</b><span>Add files. Order is taken from the Op numbers.</span></li><li><b>2</b><span>Check the preview, order and tool slots.</span></li><li><b>3</b><span>Export one .nc file for the Z1.</span></li></ol>
+          </div>
+        </div>
+        <div class="vnone" id="vnone" hidden><div><b>Nothing to preview</b><br>Tick at least one toolpath on the left, or check the errors.</div></div>
+      </section>
+
+      <div class="transport">
+        <button id="vprev" class="btn icon ghost" type="button" aria-label="Previous toolpath" title="Previous toolpath  [ "><svg class="i"><use href="#i-prev"/></svg></button>
+        <button id="vplay" class="play" type="button" aria-pressed="false" aria-label="Play" title="Play or pause  (Space)"><svg class="i f" id="vplay-i"><use href="#i-play"/></svg></button>
+        <button id="vnext" class="btn icon ghost" type="button" aria-label="Next toolpath" title="Next toolpath  ] "><svg class="i"><use href="#i-next"/></svg></button>
+        <div class="tline" id="vtl"><div class="track" id="vtrack"></div><input id="vseek" type="range" min="0" max="1000" value="0" aria-label="Position in the program"></div>
+        <span id="vtime" class="tm">0:00 / 0:00</span>
+        <select id="vspeed" class="speedsel" aria-label="Playback speed" title="Playback speed"><option value="1">1×</option><option value="10">10×</option><option value="50">50×</option><option value="100" selected>100×</option><option value="500">500×</option><option value="2000">2000×</option></select>
+        <button id="gtoggle" class="btn" type="button" aria-pressed="false" title="Show or hide the generated G-code"><svg class="i"><use href="#i-code"/></svg>G-code</button>
+      </div>
+      <div class="split" id="split" role="separator" aria-orientation="horizontal" aria-label="Resize the G-code window"></div>
+      <section class="gdock" id="gdock" aria-label="G-code">
+        <div class="gh"><h3>G-code</h3><span class="count" id="gcount"></span><div class="sp"></div>
+          <select id="vjump" aria-label="Jump to a place in the program"></select>
+          <label><input type="checkbox" id="vfollow" class="sw" checked> Follow tool</label>
+          <button class="btn icon ghost sm" type="button" data-do="gclose" title="Hide the G-code" aria-label="Hide the G-code"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <pre class="code" id="code" tabindex="0" aria-label="Generated G-code. Click a line to move the preview there."></pre>
+      </section>
+    </main>
+
+    <!-- right: how it is written -->
+    <aside class="right" id="right" aria-label="Settings">
+      <div class="tabs"><div class="seg" id="mode" role="group" aria-label="Settings level">
+        <button type="button" data-m="basic" aria-pressed="true">Basic</button>
+        <button type="button" data-m="adv" aria-pressed="false">Advanced <span class="badge" id="adv-n" hidden title="Advanced settings changed from their defaults"></span></button>
+      </div></div>
+
+      <div class="pane" id="tab-basic">
+        <section class="grp" id="grp-sum" hidden><h3>This bundle</h3><div class="stats" id="stats"></div></section>
+        <section class="grp"><h3>Stock</h3><div class="d">Written to the file header. Z0 is the top of the stock.</div>
+          <div class="stock"><label>Length (X)<input type="number" id="s-l" min="1" step="any"></label><label>Width (Y)<input type="number" id="s-w" min="1" step="any"></label><label>Thickness<input type="number" id="s-h" min="0.1" step="any"></label></div>
+        </section>
+        <section class="grp"><h3>Speed</h3>
+          <div class="row"><label for="o-fast">Fast moves above the part</label><div class="ctl"><input type="checkbox" id="o-fast" class="sw"></div><div class="d">Fusion Personal slows every retract to cutting speed. Turn this on to make moves above the safe height full-speed rapids (G0).</div></div>
+          <div class="row sub" id="rz-row"><label for="o-rz">Safe height</label><div class="ctl"><input type="number" id="o-rz" step="any"><span class="mut">mm above Z0</span></div></div>
+        </section>
+        <section class="grp"><h3>File name</h3>
+          <div class="fname"><input type="text" id="fname" spellcheck="false" aria-label="File name"><button class="btn" id="fname-auto" type="button" title="Go back to the automatic name" hidden>Auto</button></div><div class="d" id="save-hint" style="margin:8px 0 0"></div>
+        </section>
+        <section class="grp"><h3>Setup sheet</h3><div class="d">A printable page for the machine: run order, tool changes, tools and a picture of every toolpath.</div>
+          <button id="sh-dl" class="btn wide" type="button" disabled><svg class="i"><use href="#i-file"/></svg>Open setup sheet</button>
+          <div class="row" style="margin-top:6px"><label>Fusion's setup sheet <span class="mut">(optional)</span></label><div class="ctl"><button class="btn sm ghost" id="sh-rm" type="button" hidden>Remove</button><label class="btn sm pick" title="The .html saved from Fusion's Setup Sheet command"><svg class="i"><use href="#i-plus"/></svg>Add<input id="sh-pick" type="file" accept=".html,.htm" aria-label="Add Fusion setup sheet"></label></div>
+            <div class="d" id="sh-state"></div></div>
+        </section>
+      </div>
+
+      <div class="pane" id="tab-adv" hidden>
+        <p class="advnote">These already match what Makera Studio writes. Change them only if you know you need to. A dot <i></i> marks anything you have changed.</p>
+        <section class="grp"><h3>File header</h3>
+          <div class="row"><label for="o-head">Makera header block</label><div class="ctl"><input type="checkbox" id="o-head" class="sw"></div><div class="d">The ;@MKR| lines at the top of the file.</div></div>
+          <div class="row"><label for="o-thumb">Preview picture</label><div class="ctl"><input type="checkbox" id="o-thumb" class="sw"></div><div class="d">A top view saved as comments at the end, like Studio.</div></div>
+          <div class="row col"><label for="s-material">Material line</label><input type="text" id="s-material" spellcheck="false"><div class="d">Copied from your Studio files.</div></div>
+          <div class="row col"><label for="s-cam">CAM name</label><input type="text" id="s-cam"></div>
+        </section>
+        <section class="grp"><h3>G-code</h3>
+          <div class="row"><label for="o-tol">Arc tolerance</label><div class="ctl"><input type="number" id="o-tol" min="0.001" step="0.001"><span class="mut">mm</span></div><div class="d">Arcs become short straight lines, as in Studio. Smaller is smoother but makes a bigger file.</div></div>
+          <div class="row"><label for="o-wcs">Work offset</label><div class="ctl"><select id="o-wcs"><option value="omit">Leave out G54</option><option value="keep">Keep Fusion's line</option></select></div></div>
+          <div class="row"><label for="o-cool">M7 / M9 around each toolpath</label><div class="ctl"><input type="checkbox" id="o-cool" class="sw"></div></div>
+          <div class="row"><label for="o-carv">Remove M851 / M852</label><div class="ctl"><input type="checkbox" id="o-carv" class="sw"></div><div class="d">Carvera-only codes. Studio files never contain them.</div></div>
+          <div class="row"><label for="o-crlf">Windows line endings</label><div class="ctl"><input type="checkbox" id="o-crlf" class="sw"></div></div>
+        </section>
+        <section class="grp"><h3>Machine limits</h3><div class="d">Used for the warnings and the time estimate.</div>
+          <div class="row"><label for="s-feed">Max feed</label><div class="ctl"><input type="number" id="s-feed" min="1" step="any"><span class="mut">mm/min</span></div></div>
+          <div class="row"><label for="s-rpm">Max spindle</label><div class="ctl"><input type="number" id="s-rpm" min="1" step="any"><span class="mut">rpm</span></div></div>
+        </section>
+        <section class="grp"><button class="btn wide" id="adv-reset" type="button" disabled>Reset advanced settings</button></section>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- popovers -->
+<div class="pop pad" id="checks-pop" hidden role="dialog" aria-label="Checks"><h3 id="checks-h">Checks</h3><div id="checks-body"></div></div>
+<div class="pop" id="more-pop" hidden role="menu">
+  <button class="mi" type="button" data-do="example"><svg class="i"><use href="#i-box"/></svg>Load the example</button>
+  <button class="mi" type="button" data-do="theme"><svg class="i"><use id="theme-i" href="#i-sun"/></svg><span id="theme-t">Light theme</span></button>
+  <button class="mi" type="button" data-do="keys"><svg class="i"><use href="#i-help"/></svg>Keyboard shortcuts<span class="sp"></span><span class="kbd">?</span></button>
+</div>
+<div class="pop" id="ops-pop" hidden role="menu">
+  <button class="mi" type="button" data-do="sort"><svg class="i"><use href="#i-sort"/></svg>Sort by Op number</button>
+  <button class="mi" type="button" data-do="all"><svg class="i"><use href="#i-check"/></svg>Include all</button>
+  <div class="msep"></div>
+  <button class="mi danger" type="button" data-do="clear"><svg class="i"><use href="#i-x"/></svg>Remove all files</button>
+</div>
+<div class="pop" id="disp-pop" hidden role="dialog" aria-label="Display options">
+  <div class="mlabel">Colour paths by</div>
+  <div class="mrow"><select id="vcolor" aria-label="Colour paths by"><option value="tool">Tool</option><option value="depth">Depth</option><option value="feed">Feed rate</option></select></div>
+  <div class="msep"></div>
+  <button id="vair" class="mi on" type="button" aria-pressed="true">Show air moves<span class="sp"></span><i class="swi"></i></button>
+  <button id="vfocus" class="mi" type="button" aria-pressed="false">Dim all but the selected toolpath<span class="sp"></span><i class="swi"></i></button>
+</div>
+<div class="pop pad" id="keys-pop" hidden role="dialog" aria-label="Keyboard shortcuts">
+  <h3>Keyboard shortcuts</h3>
+  <dl class="keys">
+    <dt><span class="kbd">Space</span></dt><dd>Play or pause</dd>
+    <dt><span class="kbd">←</span> <span class="kbd">→</span></dt><dd>Step the preview (Shift: one move)</dd>
+    <dt><span class="kbd">[</span> <span class="kbd">]</span></dt><dd>Previous or next toolpath</dd>
+    <dt><span class="kbd">Home</span> <span class="kbd">End</span></dt><dd>Start or end of the program</dd>
+    <dt><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> <span class="kbd">4</span></dt><dd>3D, Top, Front, Side view</dd>
+    <dt><span class="kbd">F</span></dt><dd>Fit to window</dd>
+    <dt><span class="kbd">↑</span> <span class="kbd">↓</span></dt><dd>Move through the toolpath list</dd>
+    <dt><span class="kbd">Alt</span>+<span class="kbd">↑</span><span class="kbd">↓</span></dt><dd>Reorder the focused toolpath</dd>
+    <dt><span class="kbd">Del</span></dt><dd>Remove the focused toolpath</dd>
+    <dt>Double-click</dt><dd>a toolpath to play from its start</dd>
+  </dl>
+</div>
+<div class="veil" id="veil"><div>Drop to add to the bundle</div></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>window.Z1_SAMPLES=[{"name": "Op_1_Facing_-_6mm_3F.cnc", "text": "(Op 1 Facing - 6mm 3F)\n(Machine)\n(  vendor: Makera)\n(  model: Carvera 3-axis Community Version 1.4.2)\n(  description: Makera Carvera 3-axis Community Version 1.4.2)\n(T1  Spiral 3F 6*25mm  Makera    D=6. CR=0. - ZMIN=0. - flat end mill)\nG90 G94\nG17\nG21\n(When using Fusion for Personal Use, the feedrate of rapid)\n(moves is reduced to match the feedrate of cutting moves,)\n(which can increase machining time. Unrestricted rapid moves)\n(are available with a Fusion Subscription.)\n\n(Face1)\nM6 T1\nM851 S100\nS12000 M3\nG54\nG0 X58.35 Y10.818\nZ15.\nG1 Z5. F1000.\nZ0.6 F300.\nG18 G3 X57.75 Z0. I-0.6 K0. F1000.\nG1 X41.911\nX40.883\nG17 G2 X40.883 Y13.633 I0. J1.407\nG1 X59.168\nX59.169\nG3 X59.169 Y16.447 I0. J1.407\nG1 X39.071\nX36.089\nG2 X36.089 Y19.261 I0. J1.407\nG1 X59.169\nX80.669\nX92.916\nX94.806\nG3 X94.806 Y22.075 I0. J1.407\nG1 X2.073\nX-1.496\nG2 X-1.496 Y24.889 I0. J1.407\nG1 X94.806\nG3 X94.806 Y27.703 I0. J1.407\nG1 X94.774\nX-1.953\nG2 X-1.953 Y30.517 I0. J1.407\nG1 X96.935\nX96.953\nG3 X96.953 Y33.332 I0. J1.407\nG1 X-1.938\nG2 X-1.938 Y36.146 I0. J1.407\nG1 X-0.817\nX96.953\nG18 G2 X97.553 Z0.6 I0. K0.6\nG1 Z15.\nG17\nM5\nM852\nG28\nM30\n"}, {"name": "Op_3_Chamfer_45__3.175.cnc", "text": "(Op 3 Chamfer 45' 3.175)\n(Machine)\n(  vendor: Makera)\n(  model: Carvera 3-axis Community Version 1.4.2)\n(  description: Makera Carvera 3-axis Community Version 1.4.2)\n(T3  Chamfering Bit - 1/8? Shank      D=3.175 CR=0. TAPER=45deg - ZMIN=-0.8 - chamfer mill)\nG90 G94\nG17\nG21\n(When using Fusion for Personal Use, the feedrate of rapid)\n(moves is reduced to match the feedrate of cutting moves,)\n(which can increase machining time. Unrestricted rapid moves)\n(are available with a Fusion Subscription.)\n\n(2D Chamfer1)\nM6 T3\nM851 S100\nS12000 M3\nG54\nG0 X93.698 Y33.569\nZ15.\nG1 Z5. F600.\nZ2. F200.\nZ-0.8\nX93.384 Y33.611 F600.\nG2 X92.262 Y32.677 I-1.07 J0.144\nG1 X92.204 Y32.684\nX92.147 Y32.698\nX88.126 Y33.981\nX85.095 Y31.221\nX85.968 Y27.217\nX90.121 Y25.892\nG2 X90.836 Y23.276 I-0.491 J-1.54\nG1 X90.786 Y23.228\nX90.729 Y23.188\nX90.667 Y23.158\nX89.167 Y22.558\nX89.112 Y22.54\nX89.054 Y22.529\nX88.996 Y22.526\nX84.549 Y22.564\nX84.476 Y22.571\nX84.405 Y22.59\nX83.846 Y22.785\nG2 X83.636 Y22.938 I0.149 J0.425\nG3 X78.428 Y25.526 I-5.208 J-3.946\nG1 X58.497\nG3 X52.448 Y17.939 I2.629 J-8.3\nG1 X52.439 Y17.875\nX52.42 Y17.814\nG3 X53.619 Y17.215 I0.628 J-0.242\nG2 X55.444 Y16.07 I0.913 J-0.572\nX55.173 Y15.777 I-0.913 J0.572\nX48.994 Y11.526 I-6.047 J2.173\nX45.325 Y14.355 I0.03 J3.832\nG1 X45.324 Y14.357\nG3 X42.169 Y20.191 I-13.707 J-3.643\nG1 X42.163 Y20.199\nG3 X32.033 Y25.526 I-11.78 J-10.107\nG1 X6.057\nG2 X6.057 Y34.426 I0. J4.45\nG1 X79.97\nG3 X82.699 Y36.073 I-3.872 J9.496\nG1 X84.374 Y37.483\nX84.418 Y37.515\nG2 X93.363 Y34.01 I3.226 J-4.934\nG1 X93.364 Y34.005\nG2 X93.384 Y33.611 I-1.05 J-0.25\nG1 X93.698 Y33.569\nZ5.\nX7.589 Y29.976\nZ2. F200.\nZ-0.8\nX7.907 F600.\nG3 X4.207 Y29.976 I-1.85 J0.\nX7.907 Y29.976 I1.85 J0.\nG1 X7.589\nZ15.\nM5\nM852\nG28\nM30\n"}];</script>
+<script>/* Fusion (Carvera community post) -> Makera Z1 / Makera Studio style .nc
+ * Pure functions, no DOM. Works in the browser (window.Z1B) and in node (module.exports).
+ *
+ * Format facts this is built on (from Studio exports of the user's Z1 project):
+ *  - ";@MKR|" header block, then "G90 G21"
+ *  - per toolpath: ";@MKR|TOOLPATH_START|toolpath_number=N", "M5" (not first), "; Tn-name", "Tn M6", "M7",
+ *    first XY rapid, "S12000 M3", moves, "M9"
+ *  - same tool as previous toolpath: no M5 / M6 / spindle restart
+ *  - footer "M9", "M05", "G28", "M02", then optional thumbnail comment block
+ *  - only G0 / G1 (all arcs are linearised), no G54, no M851/M852
+ */
+(function (root) {
+  'use strict';
+
+  /* ---------- tool library seeded from the user's Studio files ---------- */
+  const LIB = [
+    { id: '112111203808', name: '3.175*2*8mm Flat End(Metal)', type: 'Flat End', handle: 3.175, stick: 0, shoulder: 8, flute: 8, d: 2, tip: 2, cr: 0, angle: 0, half: 0, slot: 1 },
+    { id: '112111313812', name: '3.175*12mm Flat End(Metal)', type: 'Flat End', handle: 3.175, stick: 0, shoulder: 12, flute: 12, d: 3.175, tip: 3.175, cr: 0, angle: 0, half: 0, slot: 2 },
+    { id: '122111013860', name: '3.175*0.1mm*60º Engraving(Metal)', type: 'Engraving', handle: 3.175, stick: 0, shoulder: 0, flute: 2.6, d: 3.175, tip: 0.1, cr: 0, angle: 0, half: 30, slot: 3 },
+    { id: '122111013890', name: '3.175mm*90º Chamfer', type: 'V-Bit', handle: 3.175, stick: 0, shoulder: 0, flute: 1.6, d: 3.175, tip: 0.1, cr: 0, angle: 90, half: 0, slot: 6 }
+  ];
+
+  const DEFAULTS = {
+    tol: 0.005,            // arc chord tolerance, mm
+    stripCarvera: true,    // drop M851 / M852
+    wcs: 'omit',           // 'omit' (like Studio) | 'keep'
+    coolant: true,         // M7 / M9 around every toolpath, like Studio
+    header: true,
+    thumbnail: true,
+    fastRapids: false,
+    rapidZ: 5,
+    crlf: true,
+    project: 'Job',
+    stock: { l: 100, w: 100, h: 5 },
+    material: ';@MKR|MATERIAL|id=|name3=other|name1=Aluminum Alloys|name2=6061 Aluminum|uuid1=019bfadc-e599-74ef-b4ba-f34413e6f231',
+    cam: 'Fusion 360',
+    maxFeed: 1200,
+    maxRpm: 13000
+  };
+
+  /* ---------- helpers ---------- */
+  function fmt(v) {
+    let s = (Math.round(v * 1000) / 1000).toFixed(3);
+    if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+    if (s === '-0' || s === '') s = '0';
+    return s;
+  }
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const clean = (s) => String(s).replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+
+  function toolKind(txt) {
+    if (/chamfer|engrav|taper/i.test(txt)) return 'chamfer';
+    if (/ball/i.test(txt)) return 'ball';
+    if (/bull/i.test(txt)) return 'bull';
+    if (/drill/i.test(txt)) return 'drill';
+    return 'flat';
+  }
+
+  function parseToolComment(c) {
+    let m = c.match(/^T(\d+)\s+(.*?)\s+D=([\d.]+)\s*(?:CR=([\d.]+))?\s*(?:TAPER=([\d.]+)\s*deg)?[^]*?ZMIN=(-?[\d.]+)\s*-\s*(.*)$/i);
+    if (m) {
+      return { num: +m[1], name: clean(m[2]), d: parseFloat(m[3]), cr: m[4] ? parseFloat(m[4]) : 0, taper: m[5] ? parseFloat(m[5]) : 0, zmin: parseFloat(m[6]), kind: toolKind(m[7] + ' ' + m[2]), kindText: clean(m[7]) };
+    }
+    m = c.match(/^T(\d+)\s+(.*)$/);
+    if (m) return { num: +m[1], name: clean(m[2]), d: 0, cr: 0, taper: 0, zmin: 0, kind: toolKind(m[2]), kindText: '' };
+    return null;
+  }
+
+  /* ---------- arc linearisation ---------- */
+  function arcPoints(p0, p1, off, cw, plane, tol) {
+    const ax = plane === 17 ? ['x', 'y', 'z'] : plane === 18 ? ['z', 'x', 'y'] : ['y', 'z', 'x'];
+    const of = plane === 17 ? [off.i, off.j] : plane === 18 ? [off.k, off.i] : [off.j, off.k];
+    const U = ax[0], V = ax[1], W = ax[2];
+    const cu = p0[U] + of[0], cv = p0[V] + of[1];
+    const r0 = Math.hypot(p0[U] - cu, p0[V] - cv), r1 = Math.hypot(p1[U] - cu, p1[V] - cv);
+    const a0 = Math.atan2(p0[V] - cv, p0[U] - cu), a1 = Math.atan2(p1[V] - cv, p1[U] - cu);
+    const TAU = Math.PI * 2;
+    let sw = a1 - a0;
+    if (!cw) { while (sw <= 1e-9) sw += TAU; while (sw > TAU + 1e-9) sw -= TAU; }
+    else { while (sw >= -1e-9) sw -= TAU; while (sw < -TAU - 1e-9) sw += TAU; }
+    const r = Math.max(r0, r1, 1e-6);
+    const dth = r > tol ? 2 * Math.acos(1 - tol / r) : Math.PI;
+    const n = Math.max(1, Math.ceil(Math.abs(sw) / dth));
+    const pts = [];
+    for (let i = 1; i <= n; i++) {
+      if (i === n) { pts.push({ x: p1.x, y: p1.y, z: p1.z }); break; }
+      const t = i / n, a = a0 + sw * t, rr = r0 + (r1 - r0) * t;
+      const q = {};
+      q[U] = cu + rr * Math.cos(a);
+      q[V] = cv + rr * Math.sin(a);
+      q[W] = p0[W] + (p1[W] - p0[W]) * t;
+      pts.push(q);
+    }
+    return { pts, radiusMismatch: Math.abs(r0 - r1), sweep: sw };
+  }
+
+  /* ---------- Fusion parser ---------- */
+  const BOILER = /^(Machine|vendor:|model:|description:|When using Fusion|which can increase|are available with|moves is reduced)/i;
+  const G_QUIET = new Set([90, 94, 21, 40, 49, 80]);
+  const M_DROP = new Set([5, 7, 8, 9]);
+
+  function parseFusion(text, filename, options) {
+    const opt = Object.assign({}, DEFAULTS, options || {});
+    const lines = text.split(/\r\n|\r|\n/);
+    const res = { file: filename, title: '', tools: {}, ops: [], errors: [], warnings: [], dropped: {} };
+    const drop = (k) => { res.dropped[k] = (res.dropped[k] || 0) + 1; };
+    const err = (ln, msg) => { if (res.errors.length < 25) res.errors.push(`${filename} line ${ln}: ${msg}`); };
+
+    // pass 1: comments -> title, tool table
+    const comments = [];
+    lines.forEach((raw) => { const m = raw.match(/^\s*\((.*)\)\s*$/); if (m) comments.push(m[1].trim()); });
+    res.title = comments.length ? clean(comments[0]) : filename.replace(/\.[^.]+$/, '');
+    // A full tool description (with D=… ZMIN=…) always wins. Newer posts also write the operation
+    // name as "(T2 Clearance Holes)", which must not replace it.
+    comments.forEach((c) => { if (/^T\d+\s/.test(c)) { const t = parseToolComment(c); if (t && (t.d > 0 || !res.tools[t.num])) res.tools[t.num] = t; } });
+    const opNumMatch = (res.title + ' ' + filename).match(/\bOp[\s_-]*(\d+)/i) || res.title.match(/^(\d+)\s*[.)]\s/) || filename.match(/^(\d+)[._\s-]/);
+    res.opNumber = opNumMatch ? parseInt(opNumMatch[1], 10) : null;
+
+    let op = null, plane = 17, mode = null, feed = null, spindleS = null, pendingT = null, wcs = null, ended = false;
+    let pos = { x: null, y: null, z: null };
+    let lastLabel = '';
+
+    const startOp = (toolNum, ln) => {
+      let t = res.tools[toolNum];
+      if (!t) { t = { num: toolNum, name: 'T' + toolNum, d: 0, cr: 0, taper: 0, zmin: 0, kind: 'flat', kindText: '' }; res.warnings.push(`${filename}: no tool description comment for T${toolNum}`); }
+      op = { file: filename, title: res.title, label: lastLabel, tool: t, toolKey: t.num + '|' + t.name, wcs: wcs, events: [], spindle: null, arcs: 0, arcSegs: 0, srcLines: 0 };
+      res.ops.push(op);
+      pos = { x: null, y: null, z: null }; feed = null; mode = null; plane = 17;
+    };
+
+    lines.forEach((raw, idx) => {
+      const ln = idx + 1;
+      const cm = raw.match(/^\s*\((.*)\)\s*$/);
+      if (cm) { const c = cm[1].trim(); if (!BOILER.test(c) && !/^T\d+\s/.test(c) && clean(c) !== res.title) lastLabel = clean(c); return; }
+      const code = raw.replace(/\([^)]*\)/g, ' ').replace(/;.*$/, '').trim().toUpperCase();
+      if (!code || ended) return;
+      const words = [];
+      const re = /([A-Z])\s*([-+]?(?:\d+\.?\d*|\.\d+))/g;
+      let m;
+      while ((m = re.exec(code))) words.push([m[1], parseFloat(m[2])]);
+      const rest = code.replace(re, '').replace(/\s+/g, '');
+      if (rest) { err(ln, `could not read "${raw.trim()}"`); return; }
+      if (op) op.srcLines++;
+
+      const A = {}; // axis / param words
+      let sawM3 = false, motionG = null;
+      for (const [L, v] of words) {
+        if (L === 'G') {
+          const g = Math.round(v * 10) / 10;
+          if (g === 0 || g === 1 || g === 2 || g === 3) motionG = g, mode = g;
+          else if (g === 17 || g === 18 || g === 19) plane = g;
+          else if (g >= 54 && g <= 59) { wcs = 'G' + g; if (op) op.wcs = wcs; }
+          else if (G_QUIET.has(g)) { /* header modal codes */ }
+          else if (g === 28) drop('G28');
+          else if (g === 4) { /* dwell handled below */ A.G4 = true; }
+          else if (g === 91) err(ln, 'G91 (incremental mode) is not supported');
+          else if (g === 20) err(ln, 'G20 (inches) is not supported; post the Fusion job in millimetres');
+          else err(ln, `unsupported G${v} (cutter compensation, canned cycles and offsets are not handled)`);
+        } else if (L === 'M') {
+          const mm = Math.round(v);
+          if (mm === 3) sawM3 = true;
+          else if (mm === 6) { if (op && op.events.length === 0 && pendingT == null && A.T == null) { /* fallthrough */ } A.M6 = true; }
+          else if (M_DROP.has(mm)) drop('M' + mm);
+          else if (mm === 2 || mm === 30) { drop('M' + mm); ended = true; }
+          else if (mm === 0 || mm === 1) { A.raw = (A.raw || []).concat('M' + mm); }
+          else if (mm === 851 || mm === 852) { A.carv = (A.carv || []).concat([[mm, code]]); }
+          else err(ln, `unsupported M${mm}`);
+        } else if (L === 'T') A.T = Math.round(v);
+        else if (L === 'S') A.S = v;
+        else if (L === 'F') A.F = v;
+        else if ('XYZIJKRP'.includes(L)) A[L] = v;
+        else if ('ABC'.includes(L)) err(ln, `axis ${L} (4th axis) is not supported`);
+        else err(ln, `unknown word ${L}${v}`);
+      }
+
+      if (A.T != null && !A.M6) pendingT = A.T;
+      if (A.M6) {
+        const tn = A.T != null ? A.T : pendingT;
+        if (tn == null) err(ln, 'M6 without a tool number'); else startOp(tn, ln);
+        pendingT = null;
+      }
+      if (A.carv && op) A.carv.forEach(([mm]) => {
+        const text = mm === 851 ? (code.match(/M851[^M]*/) || ['M851'])[0].trim() : 'M852';
+        op.events.push({ kind: 'carvera', text });
+      });
+      if (A.S != null && !A.carv) spindleS = A.S;
+      if (sawM3) {
+        if (spindleS == null) err(ln, 'M3 without a spindle speed');
+        else if (op) { if (op.spindle == null) op.spindle = spindleS; op.events.push({ kind: 'spindle', s: spindleS }); }
+      }
+      if (A.F != null) feed = A.F;
+      if (A.G4 && op) op.events.push({ kind: 'raw', text: 'G4 P' + fmt(A.P != null ? A.P : 0) });
+      if (A.raw && op) A.raw.forEach((t) => op.events.push({ kind: 'raw', text: t }));
+
+      const hasAxis = ['X', 'Y', 'Z'].some((k) => A[k] != null);
+      if (hasAxis) {
+        if (!op) { err(ln, 'cutting move before any tool change (M6)'); return; }
+        if (mode == null) { err(ln, 'move with no G0/G1/G2/G3 active'); return; }
+        const tgt = { x: A.X != null ? A.X : pos.x, y: A.Y != null ? A.Y : pos.y, z: A.Z != null ? A.Z : pos.z };
+        if (mode <= 1) {
+          if (mode === 1 && feed == null) { err(ln, 'G1 move with no feed rate'); return; }
+          op.events.push({ kind: 'move', g: mode, x: tgt.x, y: tgt.y, z: tgt.z, f: feed });
+        } else {
+          if (A.R != null) { err(ln, 'arcs defined with R are not supported (expected I/J/K)'); return; }
+          if (feed == null) { err(ln, 'arc with no feed rate'); return; }
+          const need = plane === 17 ? ['x', 'y', 'z'] : plane === 18 ? ['x', 'z', 'y'] : ['y', 'z', 'x'];
+          if (need.some((k) => pos[k] == null || tgt[k] == null)) { err(ln, 'arc before the start position is known'); return; }
+          const ar = arcPoints(pos, tgt, { i: A.I || 0, j: A.J || 0, k: A.K || 0 }, mode === 2, plane, opt.tol);
+          if (ar.radiusMismatch > 0.02) res.warnings.push(`${filename} line ${ln}: arc start/end radius differ by ${ar.radiusMismatch.toFixed(3)} mm`);
+          ar.pts.forEach((p) => op.events.push({ kind: 'move', g: 1, x: p.x, y: p.y, z: p.z, f: feed, arc: true }));
+          op.arcs++; op.arcSegs += ar.pts.length;
+        }
+        pos = tgt;
+      }
+    });
+
+    if (!res.ops.length) res.errors.push(`${filename}: no tool change (M6) found. Is this a Fusion/Carvera post-processed file?`);
+    res.ops.forEach((o, i) => {
+      // drop an "Op 3" / "6." sequence prefix, and a leading "T2 " that just repeats the tool number
+      o.name = clean((o.label && res.ops.length > 1 ? o.label : res.title).replace(/^Op[\s_-]*\d+[\s_-]*/i, '').replace(/^\d+\s*[.)]\s+/, '').replace(new RegExp('^T' + o.tool.num + '\\s+', 'i'), '')) || res.title;
+      o.opNumber = res.opNumber;
+      o.fileOrder = i;
+      if (o.spindle == null) res.errors.push(`${filename}: no spindle start (S… M3) found for T${o.tool.num}`);
+    });
+    return res;
+  }
+
+  /* ---------- tool mapping ---------- */
+  function autoMatch(t) {
+    for (const L of LIB) {
+      const eff = L.angle ? L.angle / 2 : L.half;
+      if (t.kind === 'flat' && L.type === 'Flat End' && Math.abs(L.d - t.d) < 0.005) return L;
+      if (t.kind === 'chamfer' && L.type !== 'Flat End' && Math.abs(L.d - t.d) < 0.005 && Math.abs(eff - (t.taper || 0)) < 0.5) return L;
+    }
+    return null;
+  }
+  function customEntry(t, name) {
+    const ch = t.kind === 'chamfer';
+    return { id: '', name: name || t.name, type: ch ? 'V-Bit' : t.kind === 'ball' ? 'Ball End' : 'Flat End', handle: 3.175, stick: 0, shoulder: 0, flute: 0, d: t.d, tip: ch ? 0 : t.d, cr: t.cr || 0, angle: ch ? t.taper * 2 : 0, half: 0, slot: t.num };
+  }
+  // prefs[key] = { lib: libId | 'custom', slot, name }
+  function resolveTools(ops, prefs) {
+    const map = new Map(), pend = [], taken = new Set();
+    ops.forEach((o) => {
+      if (map.has(o.toolKey)) return;
+      const t = o.tool, p = (prefs || {})[o.toolKey];
+      let lib = null;
+      if (p && p.lib && p.lib !== 'custom') lib = LIB.find((l) => l.id === p.lib) || null;
+      else if (!(p && p.lib === 'custom')) lib = autoMatch(t);
+      const custom = !lib;
+      const entry = custom ? customEntry(t, p && p.name) : lib;
+      const rec = { key: o.toolKey, tool: t, lib: entry, custom, slot: null, auto: !(p && p.slot) };
+      if (p && p.slot) { rec.slot = p.slot; taken.add(p.slot); }
+      else if (lib) { rec.slot = lib.slot; taken.add(lib.slot); }
+      else pend.push(rec);
+      map.set(o.toolKey, rec);
+    });
+    pend.forEach((rec) => {
+      let s = rec.tool.num;
+      if (taken.has(s)) { s = 1; while (taken.has(s)) s++; }
+      rec.slot = s; taken.add(s);
+    });
+    return map;
+  }
+
+  /* ---------- rapids at safe height ---------- */
+  function applyRapids(events, T) {
+    const out = []; let p = { x: null, y: null, z: null }, n = 0;
+    const lerp = (a, b, t) => (a == null || b == null ? b : a + (b - a) * t);
+    for (const ev of events) {
+      if (ev.kind !== 'move') { out.push(ev); continue; }
+      const s = p, e = { x: ev.x, y: ev.y, z: ev.z };
+      if (ev.g === 1 && s.z != null && e.z != null) {
+        if (s.z >= T && e.z >= T) { out.push(Object.assign({}, ev, { g: 0 })); n++; }
+        else if (s.z >= T && e.z < T) {
+          const t = (s.z - T) / (s.z - e.z);
+          out.push({ kind: 'move', g: 0, x: lerp(s.x, e.x, t), y: lerp(s.y, e.y, t), z: T, f: ev.f }); out.push(ev); n++;
+        } else if (s.z < T && e.z >= T) {
+          const t = (T - s.z) / (e.z - s.z);
+          out.push({ kind: 'move', g: 1, x: lerp(s.x, e.x, t), y: lerp(s.y, e.y, t), z: T, f: ev.f }); out.push(Object.assign({}, ev, { g: 0 })); n++;
+        } else out.push(ev);
+      } else out.push(ev);
+      p = e;
+    }
+    return { events: out, converted: n };
+  }
+
+  /* ---------- build ---------- */
+  function build(ops, toolMap, options) {
+    const opt = Object.assign({}, DEFAULTS, options || {});
+    const eol = opt.crlf ? '\r\n' : '\n';
+    const warnings = [], errors = [], notes = [];
+    const body = [], marks = [], opSummaries = [], used = new Map();
+    let prevSlot = null, prevS = null, number = 0, timeSec = 0;
+    const bbox = { minx: Infinity, maxx: -Infinity, miny: Infinity, maxy: -Infinity, minz: Infinity, maxz: -Infinity };
+    let totalCut = 0, totalRapid = 0, maxF = 0, maxS = 0;
+    const outOps = [];
+
+    ops.forEach((op, oi) => {
+      const tm = toolMap.get(op.toolKey);
+      const slot = tm.slot;
+      used.set(slot, tm);
+      const change = slot !== prevSlot;
+      number++;
+      const startLine = body.length;
+      body.push(`;@MKR|TOOLPATH_START|toolpath_number=${number}`);
+      if (change) {
+        if (prevSlot !== null) body.push('M5');
+        body.push('', `; T${slot}-${tm.lib.name}`, '', `T${slot} M6`);
+      }
+      if (opt.coolant) body.push('M7');
+      if (op.wcs && (opt.wcs === 'keep' || op.wcs !== 'G54')) body.push(op.wcs);
+
+      let evs = op.events, converted = 0;
+      if (opt.fastRapids) { const r = applyRapids(evs, opt.rapidZ); evs = r.events; converted = r.converted; }
+
+      let pendingS = (change || op.spindle !== prevS) ? op.spindle : null;
+      const afterXY = change;
+      if (pendingS !== null && !afterXY) { body.push(`S${fmt(pendingS)} M3`); prevS = pendingS; pendingS = null; }
+      let first = true;
+      const cur = { x: null, y: null, z: null };
+      const pp = { x: null, y: null, z: null };
+      let emitted = 0, cutLen = 0, rapidLen = 0, opTime = 0, zmin = Infinity, zmax = -Infinity, fmax = 0;
+      const outEvents = [];
+
+      for (const ev of evs) {
+        if (ev.kind === 'move') {
+          const parts = []; let hasXY = false;
+          for (const a of ['x', 'y', 'z']) {
+            if (ev[a] == null) continue;
+            const v = r3(ev[a]);
+            if (cur[a] !== v) { parts.push(a.toUpperCase() + fmt(v)); if (a !== 'z') hasXY = true; }
+            cur[a] = v;
+          }
+          if (!parts.length) continue;
+          if (ev.g === 1 && pendingS !== null) { body.push(`S${fmt(pendingS)} M3`); prevS = pendingS; pendingS = null; }
+          body.push(`G${ev.g} ${parts.join(' ')}` + (ev.g === 1 ? ` F${fmt(ev.f)}` : ''));
+          emitted++;
+          // stats
+          let d2 = 0;
+          for (const a of ['x', 'y', 'z']) if (pp[a] != null && cur[a] != null) d2 += (cur[a] - pp[a]) ** 2;
+          const d = Math.sqrt(d2);
+          if (ev.g === 1) { cutLen += d; totalCut += d; const f = ev.f || 1; timeSec += d / f * 60; opTime += d / f * 60; fmax = Math.max(fmax, ev.f || 0); }
+          else { totalRapid += d; rapidLen += d; timeSec += d / opt.maxFeed * 60; opTime += d / opt.maxFeed * 60; }
+          for (const a of ['x', 'y', 'z']) pp[a] = cur[a];
+          if (cur.x != null) { bbox.minx = Math.min(bbox.minx, cur.x); bbox.maxx = Math.max(bbox.maxx, cur.x); }
+          if (cur.y != null) { bbox.miny = Math.min(bbox.miny, cur.y); bbox.maxy = Math.max(bbox.maxy, cur.y); }
+          if (cur.z != null) { bbox.minz = Math.min(bbox.minz, cur.z); bbox.maxz = Math.max(bbox.maxz, cur.z); zmin = Math.min(zmin, cur.z); zmax = Math.max(zmax, cur.z); }
+          outEvents.push({ g: ev.g, x: cur.x, y: cur.y, z: cur.z, f: ev.g === 1 ? ev.f : 0, ln: body.length - 1 });
+          if (pendingS !== null && afterXY && hasXY) { body.push(`S${fmt(pendingS)} M3`); prevS = pendingS; pendingS = null; }
+          first = false;
+        } else if (ev.kind === 'spindle') {
+          if (ev === op.events.find((e) => e.kind === 'spindle')) continue; // first spindle start handled above
+          if (ev.s !== prevS) { body.push(`S${fmt(ev.s)} M3`); prevS = ev.s; }
+        } else if (ev.kind === 'raw') body.push(ev.text);
+        else if (ev.kind === 'carvera' && !opt.stripCarvera) body.push(ev.text);
+      }
+      if (pendingS !== null) { body.push(`S${fmt(pendingS)} M3`); prevS = pendingS; pendingS = null; }
+      maxS = Math.max(maxS, op.spindle || 0); maxF = Math.max(maxF, fmax);
+      if (opt.coolant) body.push('M9');
+      prevSlot = slot;
+      marks.push({ line: startLine, number, label: `Toolpath ${number}: ${op.name}`, change });
+      opSummaries.push({ name: op.name, slot, change, lines: emitted, cutLen, rapidLen, timeSec: opTime, zmin, zmax, fmax, spindle: op.spindle, converted, arcs: op.arcs, arcSegs: op.arcSegs, srcLines: op.srcLines });
+      outOps.push({ slot, name: op.name, spindle: op.spindle, startLine, events: outEvents });
+    });
+    body.push('M05', 'G28', 'M02');
+    const footerLine = body.length - 3;
+
+    // checks
+    const slotUse = new Map();
+    used.forEach((tm, slot) => { slotUse.set(slot, tm); });
+    const byKey = new Map();
+    toolMap.forEach((tm) => { if (!ops.some((o) => o.toolKey === tm.key)) return; const arr = byKey.get(tm.slot) || []; arr.push(tm); byKey.set(tm.slot, arr); });
+    byKey.forEach((arr, slot) => { if (arr.length > 1) errors.push(`Slot T${slot} is assigned to ${arr.length} different tools (${arr.map((a) => a.tool.name).join(' / ')}). Give each tool its own slot.`); });
+    if (maxS > opt.maxRpm) warnings.push(`Spindle speed up to S${fmt(maxS)} is above the machine limit of ${opt.maxRpm} rpm.`);
+    if (maxF > opt.maxFeed) warnings.push(`Feed up to F${fmt(maxF)} is above the machine limit of ${opt.maxFeed} mm/min.`);
+    if (opt.wcs === 'omit' && ops.some((o) => o.wcs && o.wcs !== 'G54')) warnings.push('Some operations use a work offset other than G54; those lines were kept.');
+    if (new Set(ops.map((o) => o.wcs || 'G54')).size > 1) warnings.push('Operations use different work offsets. Check each one is set on the machine.');
+
+    // header
+    const head = [];
+    let totalTime = Math.round(timeSec * 100) / 100;
+    if (opt.header) {
+      const st = opt.stock;
+      head.push(';@MKR|BEGIN', ';@MKR|SCHEMA|v=1.0.0', ';@MKR|MACHINE|id=Z1|name=Makera Z1');
+      if (opt.material) head.push(opt.material.replace(/[\r\n]+/g, ' '));
+      head.push(`;@MKR|STOCK|id=cuboid|length=${fmt(st.l)}|width=${fmt(st.w)}|height=${fmt(st.h)}|diameter=50`);
+      head.push(`;@MKR|ORIGIN|id=0|type_name=topFrontLeft|x=${fmt(-st.l / 2)}|y=${fmt(-st.w / 2)}|z=${fmt(st.h / 2)}`);
+      head.push(`;@MKR|CAM|id=${clean(opt.cam)}|name=${clean(opt.cam)}|v=1.0`);
+      head.push(';@MKR|UNIT|value=mm', `;@MKR|MAXFEEDRATE|value=${fmt(opt.maxFeed)}`);
+      [...used.keys()].sort((a, b) => a - b).forEach((slot) => {
+        const L = used.get(slot).lib;
+        head.push(`;@MKR|TOOL|number=${slot}|id=${L.id}|name=${L.name}|type=${L.type}|handlediameter=${fmt(L.handle)}|sticklength=${fmt(L.stick)}|shoulderlength=${fmt(L.shoulder)}|flutelength=${fmt(L.flute)}|diameter=${fmt(L.d)}|tipdiameter=${fmt(L.tip)}|cornerradius=${fmt(L.cr)}|angle=${fmt(L.angle)}|halfAngle=${fmt(L.half)}`);
+      });
+      head.push(`;@MKR|TIME|seconds=${totalTime}`);
+      ops.forEach((op, i) => head.push(`;@MKR|TOOLPATH|number=${i + 1}|tool_number=${toolMap.get(op.toolKey).slot}|name=[T${toolMap.get(op.toolKey).slot}]${clean(op.name)}`));
+      head.push(';@MKR|END');
+    }
+    const pre = head.concat(['', 'G90 G21']);
+    const offset = pre.length;
+    marks.forEach((m) => { m.line += offset; });
+    outOps.forEach((o) => o.events.forEach((e) => { e.ln += offset; }));
+    const lines = pre.concat(body);
+    const out = {
+      lines, marks, footerLine: footerLine + offset, headerLines: head.length, errors, warnings, notes,
+      ops: opSummaries, outOps, used, bbox, totalCut, totalRapid, timeSec: totalTime, maxF, maxS, eol,
+      toText(thumbB64) {
+        let t = lines.join(eol) + eol;
+        if (opt.thumbnail && thumbB64) t += ';(thumbnail_image_begin)' + eol + ';' + thumbB64 + eol + ';(thumbnail_image_end)' + eol;
+        return t;
+      }
+    };
+    return out;
+  }
+
+  const api = { LIB, DEFAULTS, fmt, parseFusion, resolveTools, autoMatch, build, applyRapids, arcPoints };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Z1B = api;
+})(typeof window !== 'undefined' ? window : this);
+</script>
+<script>/* Toolpath viewport (orbit / pan / zoom, view presets, colour modes), playback and G-code window.
+ * Talks to app.js only through Z1V. Orthographic projection, canvas 2D; no libraries. */
+(function () {
+  'use strict';
+  const Z = window.Z1B;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const COLORS = ['#2f6bff', '#e8772e', '#1fb37a', '#d6336c', '#8f6bf0', '#c9ae14', '#14a3c2', '#e0502f'];
+  const colorOf = (slot) => COLORS[(slot - 1 + 80) % COLORS.length];
+  const BINS = 12, AIR_Z = 1, LINE_H = 18;
+  const ramp = (i) => 'hsl(' + Math.round(225 - 215 * i / (BINS - 1)) + ' 82% ' + (i < 3 ? 60 : 56) + '%)';
+  const VIEWS = { iso: { yaw: -35, pitch: 35 }, top: { yaw: 0, pitch: 90 }, front: { yaw: 0, pitch: 0 }, right: { yaw: -90, pitch: 0 } };
+
+  let res = null, tmap = null, set = null;
+  let N = 0, X, Y, ZZ, G, SL, LN, TT, START, FD, OPI, SXa, SYa, total = 0, opStart = [], fmin = 0, fmax = 0;
+  let idx = 0, playing = false, simT = 0, speed = 100, lastTs = 0, raf = 0, lastCodeDraw = 0, lastOp = -1;
+  const cam = { yaw: -35, pitch: 35, s: 1, ox: 0, oy: 0 };
+  let T = { cy: 1, sy: 0, cp: 1, sp: 0 }, C = [0, 0, 0];
+  let userView = false, W = 0, H = 0, dpr = 1, showAir = true, follow = true, codeTop = 0;
+  let colorMode = 'tool', focusOp = -1, focusOn = false, lowDetail = false, viewName = 'iso', bboxKey = '', tween = 0;
+  const on = { op: null };
+  const base = document.createElement('canvas'), done = document.createElement('canvas');
+  let cv, ctx, bctx, dctx, zcv, zctx;
+
+  const css = (name, fb) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb;
+  const mmss = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+
+  /* ---------- data ---------- */
+  function prepare() {
+    N = 0; res.outOps.forEach((o) => { N += o.events.length; });
+    X = new Float32Array(N); Y = new Float32Array(N); ZZ = new Float32Array(N); G = new Uint8Array(N); FD = new Float32Array(N);
+    SL = new Int16Array(N); LN = new Int32Array(N); TT = new Float64Array(N); START = new Uint8Array(N); OPI = new Int16Array(N);
+    SXa = new Float32Array(N); SYa = new Float32Array(N);
+    opStart = [];
+    const maxFeed = (set && set.maxFeed) || 1200;
+    let px = 0, py = 0, pz = Math.min(res.bbox.maxz, 15), t = 0, k = 0, first = true, a = Infinity, b = 0;
+    res.outOps.forEach((o, oi) => {
+      opStart.push(k); START[k] = 1;
+      o.events.forEach((e) => {
+        const x = e.x != null ? e.x : px, y = e.y != null ? e.y : py, z = e.z != null ? e.z : pz;
+        if (!first) t += Math.hypot(x - px, y - py, z - pz) / (e.g === 1 ? (e.f || 1) : maxFeed) * 60;
+        first = false;
+        X[k] = x; Y[k] = y; ZZ[k] = z; G[k] = e.g; SL[k] = o.slot; LN[k] = e.ln; TT[k] = t; OPI[k] = oi; FD[k] = e.g === 1 ? (e.f || 0) : 0;
+        if (e.g === 1 && e.f) { a = Math.min(a, e.f); b = Math.max(b, e.f); }
+        px = x; py = y; pz = z; k++;
+      });
+    });
+    total = t; fmin = a === Infinity ? 0 : a; fmax = b;
+    const bb = res.bbox, zhi = Math.min(bb.maxz, 8);
+    C = [(bb.minx + bb.maxx) / 2, (bb.miny + bb.maxy) / 2, (bb.minz + zhi) / 2];
+  }
+  const idxAtTime = (t) => { let lo = 0, hi = N - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (TT[m] < t) lo = m + 1; else hi = m; } return lo; };
+  const idxAtLine = (ln) => { let lo = 0, hi = N - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (LN[m] < ln) lo = m + 1; else hi = m; } return lo; };
+  function toolDia(slot, z) {
+    const tm = res.used.get(slot); if (!tm) return 2;
+    const L = tm.lib;
+    if (L.type === 'Flat End' || L.type === 'Ball End') return L.d;
+    const half = L.angle ? L.angle / 2 : L.half;
+    return Math.min(L.d, L.tip + 2 * Math.max(0, -z) * Math.tan(half * Math.PI / 180));
+  }
+
+  /* ---------- camera ---------- */
+  function trig() { const y = cam.yaw * Math.PI / 180, p = cam.pitch * Math.PI / 180; T = { cy: Math.cos(y), sy: Math.sin(y), cp: Math.cos(p), sp: Math.sin(p) }; }
+  const sxOf = (x, y, z) => cam.ox + ((x - C[0]) * T.cy - (y - C[1]) * T.sy) * cam.s;
+  const syOf = (x, y, z) => cam.oy - (((x - C[0]) * T.sy + (y - C[1]) * T.cy) * T.sp + (z - C[2]) * T.cp) * cam.s;
+  function project() {
+    trig(); if (!N) return;
+    const s = cam.s, ox = cam.ox, oy = cam.oy;
+    for (let i = 0; i < N; i++) {
+      const dx = X[i] - C[0], dy = Y[i] - C[1], dz = ZZ[i] - C[2];
+      SXa[i] = ox + (dx * T.cy - dy * T.sy) * s;
+      SYa[i] = oy - ((dx * T.sy + dy * T.cy) * T.sp + dz * T.cp) * s;
+    }
+  }
+  function fit() {
+    if (!res) return;
+    trig();
+    const b = res.bbox, zhi = Math.min(b.maxz, 8);
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    [b.minx, b.maxx].forEach((x) => [b.miny, b.maxy].forEach((y) => [b.minz, zhi].forEach((z) => {
+      const dx = x - C[0], dy = y - C[1], dz = z - C[2];
+      const u = dx * T.cy - dy * T.sy, v = (dx * T.sy + dy * T.cy) * T.sp + dz * T.cp;
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    })));
+    const padL = 40, padR = 70, padT = 70, padB = 70;
+    const s = Math.min((W - padL - padR) / Math.max(u1 - u0, 1), (H - padT - padB) / Math.max(v1 - v0, 1));
+    cam.s = Math.max(0.05, s);
+    cam.ox = padL + (W - padL - padR) / 2 - (u0 + u1) / 2 * cam.s;
+    cam.oy = padT + (H - padT - padB) / 2 + (v0 + v1) / 2 * cam.s;
+  }
+
+  /* ---------- drawing ---------- */
+  function resize() {
+    const st = $('vstage'); if (!st) return;
+    const w = Math.max(50, st.clientWidth), h = Math.max(50, st.clientHeight), d = window.devicePixelRatio || 1;
+    if (w === W && h === H && d === dpr) return;
+    W = w; H = h; dpr = d;
+    [cv, base, done].forEach((c) => { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    if (res) { if (!userView) fit(); project(); redrawAll(); }
+  }
+  function keyOf(i) {
+    if (colorMode === 'depth') { const zmin = Math.min(-1e-6, res.bbox.minz), z = ZZ[i]; return 100 + (z >= 0 ? 0 : Math.min(BINS - 1, Math.floor(-z / -zmin * (BINS - 1e-6)))); }
+    if (colorMode === 'feed') return 200 + (fmax > fmin ? Math.max(0, Math.min(BINS - 1, Math.floor((FD[i] - fmin) / (fmax - fmin) * (BINS - 1e-6)))) : 0);
+    return SL[i];
+  }
+  const colorFor = (k) => (k < 100 ? colorOf(k) : k < 200 ? ramp(k - 100) : ramp(k - 200));
+  function strokeRange(c, a, b, live) {
+    const air = css('--ink2', '#98a0b0');
+    const paths = new Map();
+    const stride = lowDetail ? Math.max(1, Math.ceil((b - a + 1) / 9000)) : 1;
+    const fo = !live && focusOn && focusOp >= 0;
+    for (let i = Math.max(a, 1); i <= b; i += stride) {
+      if (START[i]) continue;
+      const isAir = G[i] === 0 || (ZZ[i] > AIR_Z && ZZ[i - 1] > AIR_Z);
+      if (isAir && !showAir) continue;
+      let key = isAir ? -1 : keyOf(i);
+      if (fo && OPI[i] !== focusOp) key += 5000;
+      let p = paths.get(key); if (!p) { p = new Path2D(); paths.set(key, p); }
+      const j = stride > 1 ? i - 1 : i - 1;
+      p.moveTo(SXa[j], SYa[j]); p.lineTo(SXa[i], SYa[i]);
+    }
+    c.lineJoin = 'round'; c.lineCap = 'round';
+    paths.forEach((p, key) => {
+      const dim = key >= 5000, k = dim ? key - 5000 : key;
+      if (k === -1) { c.strokeStyle = air; c.globalAlpha = dim ? 0.04 : live ? 0.38 : 0.16; c.lineWidth = 0.8; }
+      else { c.strokeStyle = colorFor(k); c.globalAlpha = dim ? 0.1 : live ? 1 : (colorMode === 'tool' ? 0.3 : 0.45); c.lineWidth = live ? 1.6 : 1.3; }
+      c.stroke(p);
+    });
+    c.globalAlpha = 1;
+  }
+  function niceStep(px) { const steps = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]; for (const s of steps) if (s * cam.s >= px) return s; return 1000; }
+  function redrawBase() {
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0); bctx.clearRect(0, 0, W, H);
+    if (!res) return;
+    const line = css('--line', '#2a2f38'), line2 = css('--line2', '#3a404c'), ink2 = css('--ink2', '#98a0b0');
+    const bb = res.bbox, st = niceStep(46), m = st * 2;
+    let x0 = Math.floor((bb.minx - m) / st) * st, x1 = Math.ceil((bb.maxx + m) / st) * st, y0 = Math.floor((bb.miny - m) / st) * st, y1 = Math.ceil((bb.maxy + m) / st) * st;
+    bctx.lineWidth = 1; bctx.strokeStyle = line; bctx.beginPath();
+    for (let gx = x0; gx <= x1; gx += st) { bctx.moveTo(sxOf(gx, y0, 0), syOf(gx, y0, 0)); bctx.lineTo(sxOf(gx, y1, 0), syOf(gx, y1, 0)); }
+    for (let gy = y0; gy <= y1; gy += st) { bctx.moveTo(sxOf(x0, gy, 0), syOf(x0, gy, 0)); bctx.lineTo(sxOf(x1, gy, 0), syOf(x1, gy, 0)); }
+    bctx.stroke();
+    // work origin axes
+    const L = Math.max(6, 28 / cam.s);
+    [['#e5484d', L, 0, 0], ['#3fb950', 0, L, 0], ['#4c8dff', 0, 0, L]].forEach((a) => {
+      bctx.strokeStyle = a[0]; bctx.lineWidth = 2; bctx.beginPath(); bctx.moveTo(sxOf(0, 0, 0), syOf(0, 0, 0)); bctx.lineTo(sxOf(a[1], a[2], a[3]), syOf(a[1], a[2], a[3])); bctx.stroke();
+    });
+    bctx.fillStyle = ink2; bctx.font = '11px ' + css('--mono', 'monospace');
+    bctx.fillText('X0 Y0 Z0', sxOf(0, 0, 0) + 7, syOf(0, 0, 0) + 14);
+    strokeRange(bctx, 1, N - 1, false);
+  }
+  function redrawDone() {
+    dctx.setTransform(dpr, 0, 0, dpr, 0, 0); dctx.clearRect(0, 0, W, H);
+    if (res && idx > 0) strokeRange(dctx, 1, idx, true);
+  }
+  function redrawAll() { redrawBase(); redrawDone(); frame(); }
+  function gizmo(c) {
+    const ox = 46, oy = H - 46, L = 30;
+    [['X', 1, 0, 0, '#e5484d'], ['Y', 0, 1, 0, '#3fb950'], ['Z', 0, 0, 1, '#4c8dff']].forEach((a) => {
+      const u = a[1] * T.cy - a[2] * T.sy, v = (a[1] * T.sy + a[2] * T.cy) * T.sp + a[3] * T.cp;
+      c.strokeStyle = a[4]; c.lineWidth = 2; c.beginPath(); c.moveTo(ox, oy); c.lineTo(ox + u * L, oy - v * L); c.stroke();
+      c.fillStyle = a[4]; c.font = '600 11px ' + css('--ui', 'sans-serif'); c.fillText(a[0], ox + u * (L + 8) - 3, oy - v * (L + 8) + 4);
+    });
+  }
+  function frame() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+    if (!res || !N) { drawZ(); hud(); return; }
+    ctx.drawImage(base, 0, 0); ctx.drawImage(done, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const slot = SL[idx], col = colorOf(slot), x = X[idx], y = Y[idx], z = ZZ[idx], r = Math.max(toolDia(slot, z) / 2, 1.5 / cam.s);
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let a = 0; a <= 24; a++) { const t = a / 24 * Math.PI * 2, px = sxOf(x + r * Math.cos(t), y + r * Math.sin(t), z), py = syOf(x + r * Math.cos(t), y + r * Math.sin(t), z); if (a) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+    ctx.globalAlpha = 0.18; ctx.fill(); ctx.globalAlpha = 1; ctx.stroke();
+    const sh = 14; ctx.beginPath(); ctx.moveTo(sxOf(x, y, z), syOf(x, y, z)); ctx.lineTo(sxOf(x, y, z + sh), syOf(x, y, z + sh)); ctx.lineWidth = Math.max(2, r * cam.s * 0.5); ctx.globalAlpha = 0.55; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(sxOf(x, y, z), syOf(x, y, z), 3.2, 0, 6.2832); ctx.fill();
+    gizmo(ctx); drawZ(); hud();
+  }
+  function drawZ() {
+    const c = zcv, g = zctx, w = c.clientWidth, h = c.clientHeight, d = window.devicePixelRatio || 1;
+    if (c.width !== Math.round(w * d) || c.height !== Math.round(h * d)) { c.width = Math.round(w * d); c.height = Math.round(h * d); }
+    g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, w, h);
+    if (!res) return;
+    const top = 6, stockH = set && set.stock ? set.stock.h : 5, bot = Math.min(res.bbox.minz, -stockH) - 0.6, pad = 34;
+    const Yz = (z) => pad + (top - Math.min(z, top)) / (top - bot) * (h - 2 * pad);
+    const ink2 = css('--ink2', '#98a0b0'), acc = css('--accent', '#5b8cff');
+    g.fillStyle = acc; g.globalAlpha = 0.2; g.fillRect(8, Yz(0), 14, Yz(-stockH) - Yz(0)); g.globalAlpha = 1;
+    g.strokeStyle = ink2; g.lineWidth = 1; g.beginPath(); g.moveTo(15, pad); g.lineTo(15, h - pad); g.stroke();
+    g.beginPath(); g.moveTo(6, Yz(0)); g.lineTo(24, Yz(0)); g.stroke();
+    g.fillStyle = ink2; g.font = '10px ' + css('--mono', 'monospace'); g.textAlign = 'center';
+    g.fillText('Z', 22, 16); g.fillText('0', 34, Yz(0) - 3 + 12 * 0); g.fillText(Z.fmt(Math.round(-stockH * 10) / 10), 28, Yz(-stockH) + 12); g.textAlign = 'left';
+    if (N) { const z = ZZ[idx]; g.fillStyle = colorOf(SL[idx]); g.beginPath(); g.moveTo(15, Yz(z)); g.lineTo(3, Yz(z) - 6); g.lineTo(3, Yz(z) + 6); g.closePath(); g.fill(); g.fillStyle = ink2; g.fillText(z.toFixed(1), 28, Yz(z) + 4); }
+  }
+  function hud() {
+    const el = $('hud');
+    if (!res || !N) { el.innerHTML = ''; el.style.display = 'none'; $('vtime').textContent = '0:00 / 0:00'; return; }
+    el.style.display = '';
+    const o = OPI[idx], slot = SL[idx], ev = res.outOps[o].events[idx - opStart[o]];
+    el.innerHTML = `<b>${o + 1}. ${esc(res.outOps[o].name)}</b> · T${slot} · ${G[idx] ? 'G1 F' + Z.fmt(ev.f) : 'G0 rapid'}<br>X ${X[idx].toFixed(2)}  Y ${Y[idx].toFixed(2)}  Z ${ZZ[idx].toFixed(2)} · line ${(LN[idx] + 1).toLocaleString()}`;
+    $('vtime').textContent = mmss(TT[idx]) + ' / ' + mmss(total);
+    $('vseek').value = total ? Math.round(TT[idx] / total * 1000) : 0;
+    if (o !== lastOp) { lastOp = o; if (on.op) on.op(o); }
+  }
+  function legend() {
+    const el = $('vlegend');
+    if (!res) { el.innerHTML = ''; return; }
+    if (colorMode === 'tool') el.innerHTML = [...res.used.keys()].sort((a, b) => a - b).map((s) => `<span class="lc" style="--c:${colorOf(s)}"><i></i>T${s}</span>`).join('');
+    else {
+      const stops = []; for (let i = 0; i < BINS; i++) stops.push(ramp(i));
+      const g = 'linear-gradient(90deg,' + stops.join(',') + ')';
+      el.innerHTML = colorMode === 'depth'
+        ? `<span>Z 0</span><span class="bar2" style="background:${g}"></span><span>${Z.fmt(Math.round(res.bbox.minz * 10) / 10)} mm</span>`
+        : `<span>${Z.fmt(fmin)}</span><span class="bar2" style="background:${g}"></span><span>${Z.fmt(fmax)} mm/min</span>`;
+    }
+  }
+  function timeline() {
+    const tr = $('vtrack');
+    if (!res || !total) { tr.style.background = ''; return; }
+    const stops = []; res.outOps.forEach((o, i) => {
+      const a = TT[opStart[i]] / total * 100, b = (i + 1 < opStart.length ? TT[opStart[i + 1]] : total) / total * 100, c = colorOf(o.slot);
+      stops.push(`${c} ${a.toFixed(2)}% ${Math.max(a, b - 0.25).toFixed(2)}%`, `transparent ${Math.max(a, b - 0.25).toFixed(2)}% ${b.toFixed(2)}%`);
+    });
+    tr.style.background = 'linear-gradient(90deg,' + stops.join(',') + ')';
+    tr.style.backgroundColor = 'var(--line2)';
+  }
+
+  /* ---------- g-code window ---------- */
+  function rows() { return Math.max(4, Math.floor($('code').clientHeight / LINE_H)); }
+  function codeDraw(force) {
+    if (!res) { $('code').innerHTML = ''; $('gcount').textContent = ''; return; }
+    const now = performance.now();
+    if (!force && playing && now - lastCodeDraw < 70) return;
+    lastCodeDraw = now;
+    const n = rows(), cur = N ? LN[idx] : -1, tl = res.lines.length;
+    if (follow && N) codeTop = Math.max(0, Math.min(tl - n, cur - Math.floor(n * 0.4)));
+    codeTop = Math.max(0, Math.min(Math.max(0, tl - n), codeTop));
+    let html = '';
+    for (let i = codeTop; i < Math.min(tl, codeTop + n); i++) {
+      const t = res.lines[i], c = t.charAt(0);
+      const cls = i === cur ? ' hl' : '', k = c === ';' ? ' dim' : /^G0\b/.test(t) ? ' rp' : /^[TMS]\d/.test(t) ? ' mc' : '';
+      html += `<span class="ln${cls}${k}" data-ln="${i}"><i>${i + 1}</i>${esc(t.length > 160 ? t.slice(0, 160) + '…' : t)}</span>`;
+    }
+    $('code').innerHTML = html;
+    $('gcount').textContent = tl.toLocaleString() + ' lines';
+  }
+
+  /* ---------- playback ---------- */
+  function seek(k) {
+    if (!N) return;
+    idx = Math.max(0, Math.min(N - 1, k)); simT = TT[idx];
+    redrawDone(); frame(); codeDraw(true);
+  }
+  function setPlaying(p) {
+    playing = p;
+    $('vplay-i').firstElementChild.setAttribute('href', p ? '#i-pause' : '#i-play'); $('vplay').setAttribute('aria-pressed', p ? 'true' : 'false'); $('vplay').setAttribute('aria-label', p ? 'Pause' : 'Play');
+    cancelAnimationFrame(raf);
+    if (p) { if (idx >= N - 1) seek(0); lastTs = performance.now(); raf = requestAnimationFrame(tick); } else codeDraw(true);
+  }
+  function tick(ts) {
+    if (!playing) return;
+    const dt = Math.min(0.1, (ts - lastTs) / 1000); lastTs = ts;
+    simT = Math.min(total, simT + dt * speed);
+    const ni = idxAtTime(simT);
+    if (ni > idx) { strokeRange(dctx, idx + 1, ni, true); idx = ni; }
+    frame(); codeDraw(false);
+    if (simT >= total) { setPlaying(false); return; }
+    raf = requestAnimationFrame(tick);
+  }
+  function stepOp(dir) {
+    if (!N) return;
+    const o = OPI[idx];
+    if (dir > 0) seek(o + 1 < opStart.length ? opStart[o + 1] : N - 1);
+    else seek(idx - opStart[o] > 2 || o === 0 ? opStart[o] : opStart[o - 1]);
+  }
+
+  /* ---------- view control ---------- */
+  function markView(name) { viewName = name; document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === name ? 'true' : 'false')); }
+  function setView(name, instant) {
+    const v = VIEWS[name]; if (!v) return;
+    markView(name); userView = false; cancelAnimationFrame(tween);
+    if (!res || instant) { cam.yaw = v.yaw; cam.pitch = v.pitch; if (res) { fit(); project(); redrawAll(); } return; }
+    const y0 = cam.yaw, p0 = cam.pitch; let dy = ((v.yaw - y0 + 540) % 360) - 180; const t0 = performance.now();
+    lowDetail = true;
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / 260), e = t * t * (3 - 2 * t);
+      cam.yaw = y0 + dy * e; cam.pitch = p0 + (v.pitch - p0) * e;
+      fit(); project(); redrawAll();
+      if (t < 1) tween = requestAnimationFrame(step); else { cam.yaw = v.yaw; lowDetail = false; fit(); project(); redrawAll(); }
+    };
+    tween = requestAnimationFrame(step);
+  }
+  const fitView = () => { userView = false; if (res) { fit(); project(); redrawAll(); } };
+  function setColor(m) { colorMode = m; legend(); if (res) redrawAll(); }
+
+  /* ---------- public update ---------- */
+  function update(r, tm, s) {
+    const hadEnd = !res || idx >= N - 1;
+    res = r; tmap = tm; set = s;
+    const jump = $('vjump'), empty = $('vempty');
+    empty.hidden = !!r;
+    if (!r) { N = 0; lastOp = -1; setPlaying(false); redrawAll(); codeDraw(true); jump.innerHTML = ''; legend(); timeline(); return; }
+    prepare();
+    const key = [r.bbox.minx, r.bbox.maxx, r.bbox.miny, r.bbox.maxy].map((v) => Math.round(v)).join(',');
+    resize();
+    if (!userView || key !== bboxKey) { if (key !== bboxKey) userView = false; bboxKey = key; fit(); }
+    project();
+    idx = hadEnd ? N - 1 : Math.min(idx, N - 1); simT = TT[idx]; lastOp = -1;
+    jump.innerHTML = '<option value="">Jump to…</option><option value="start">Start of file</option>' + r.marks.map((m, i) => `<option value="m${i}">${esc((m.change ? 'Tool change, ' : 'Continues, ') + m.label.toLowerCase())}</option>`).join('') + '<option value="end">End of file</option>';
+    legend(); timeline(); redrawAll(); codeDraw(true);
+  }
+
+  /* ---------- wiring ---------- */
+  function init() {
+    cv = $('vcv'); ctx = cv.getContext('2d'); bctx = base.getContext('2d'); dctx = done.getContext('2d');
+    zcv = $('zcv'); zctx = zcv.getContext('2d');
+    $('vplay').addEventListener('click', () => setPlaying(!playing));
+    $('vprev').addEventListener('click', () => stepOp(-1));
+    $('vnext').addEventListener('click', () => stepOp(1));
+    $('vspeed').addEventListener('change', (e) => { speed = parseFloat(e.target.value); });
+    $('vseek').addEventListener('input', (e) => { if (!N) return; setPlaying(false); seek(idxAtTime(parseInt(e.target.value, 10) / 1000 * total)); });
+    $('vair').addEventListener('click', (e) => { showAir = !showAir; e.currentTarget.classList.toggle('on', showAir); e.currentTarget.setAttribute('aria-pressed', showAir ? 'true' : 'false'); if (res) redrawAll(); });
+    $('vfocus').addEventListener('click', (e) => { focusOn = !focusOn; e.currentTarget.classList.toggle('on', focusOn); e.currentTarget.setAttribute('aria-pressed', focusOn ? 'true' : 'false'); if (res) { redrawBase(); frame(); } });
+    $('vcolor').addEventListener('change', (e) => setColor(e.target.value));
+    $('vfollow').addEventListener('change', (e) => { follow = e.target.checked; codeDraw(true); });
+    document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+    $('vfit').addEventListener('click', fitView);
+    $('vjump').addEventListener('change', (e) => {
+      const v = e.target.value; e.target.value = ''; if (!res || !v) return;
+      if (v === 'start') { $('vfollow').checked = follow = false; codeTop = 0; codeDraw(true); }
+      else if (v === 'end') { $('vfollow').checked = follow = false; codeTop = res.lines.length; codeDraw(true); }
+      else { setPlaying(false); $('vfollow').checked = follow = true; seek(opStart[+v.slice(1)]); }
+    });
+    $('code').addEventListener('click', (e) => { const l = e.target.closest('.ln'); if (!l || !N) return; setPlaying(false); seek(idxAtLine(+l.dataset.ln)); });
+    $('code').addEventListener('wheel', (e) => { if (!res) return; e.preventDefault(); $('vfollow').checked = follow = false; codeTop += Math.sign(e.deltaY) * (e.shiftKey ? 20 : 3); codeDraw(true); }, { passive: false });
+
+    // orbit (left), pan (right / middle / shift), zoom (wheel)
+    cv.addEventListener('contextmenu', (e) => e.preventDefault());
+    cv.addEventListener('wheel', (e) => {
+      if (!res) return; e.preventDefault();
+      const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      cam.s = Math.max(0.05, Math.min(5000, cam.s * f)); cam.ox = mx - (mx - cam.ox) * f; cam.oy = my - (my - cam.oy) * f; userView = true;
+      lowDetail = true; project(); redrawAll(); clearTimeout(init.wt); init.wt = setTimeout(() => { lowDetail = false; redrawAll(); }, 140);
+    }, { passive: false });
+    let drag = null, pend = false;
+    cv.addEventListener('pointerdown', (e) => { if (!res) return; cancelAnimationFrame(tween); drag = { x: e.clientX, y: e.clientY, pan: e.button !== 0 || e.shiftKey, yaw: cam.yaw, pitch: cam.pitch, ox: cam.ox, oy: cam.oy }; cv.setPointerCapture(e.pointerId); cv.classList.add('drag'); $('vstage').focus({ preventScroll: true }); });
+    cv.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (drag.pan) { cam.ox = drag.ox + dx; cam.oy = drag.oy + dy; }
+      else { cam.yaw = drag.yaw + dx * 0.4; cam.pitch = Math.max(0, Math.min(90, drag.pitch + dy * 0.4)); if (viewName) markView(''); }
+      userView = true; lowDetail = true;
+      if (!pend) { pend = true; requestAnimationFrame(() => { pend = false; if (drag) { project(); redrawAll(); } }); }
+    });
+    const end = () => { if (!drag) return; drag = null; cv.classList.remove('drag'); lowDetail = false; if (res) { project(); redrawAll(); } };
+    cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+    cv.addEventListener('dblclick', fitView);
+
+    window.addEventListener('keydown', (e) => {
+      if (!res) return;
+      if ((e.key === ' ' || e.key === 'Enter') && e.target.closest && e.target.closest('summary,a,label')) return;
+      if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+      if (e.target.tagName === 'SELECT') return;
+      if (e.target.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key;
+      if (k === ' ') { e.preventDefault(); setPlaying(!playing); }
+      else if (k === 'ArrowRight' || k === 'ArrowLeft') { e.preventDefault(); setPlaying(false); const d = e.shiftKey ? 1 : Math.max(1, Math.round(N / 300)); seek(idx + (k === 'ArrowRight' ? d : -d)); }
+      else if (k === 'Home') { e.preventDefault(); setPlaying(false); seek(0); }
+      else if (k === 'End') { e.preventDefault(); setPlaying(false); seek(N - 1); }
+      else if (k === '[') stepOp(-1); else if (k === ']') stepOp(1);
+      else if (k === '1') setView('iso'); else if (k === '2') setView('top'); else if (k === '3') setView('front'); else if (k === '4') setView('right');
+      else if (k === 'f' || k === 'F') fitView();
+    });
+    if (window.ResizeObserver) { new ResizeObserver(() => { resize(); drawZ(); codeDraw(true); }).observe($('vstage')); new ResizeObserver(() => codeDraw(true)).observe($('code')); }
+    window.addEventListener('resize', resize);
+    cam.yaw = VIEWS.iso.yaw; cam.pitch = VIEWS.iso.pitch; trig();
+    resize();
+  }
+  window.Z1V = {
+    update, init, colors: COLORS, colorOf, on,
+    get state() { return { idx, N, total, playing, simT, view: Object.assign({}, cam), viewName, colorMode, focusOp, focusOn }; },
+    play: () => setPlaying(true), pause: () => setPlaying(false), seek,
+    seekOp: (i) => { if (N && opStart[i] != null) { setPlaying(false); seek(opStart[i]); } },
+    setFocus: (i) => { focusOp = i; if (res && focusOn) { redrawBase(); frame(); } },
+    setView, redraw: () => { if (res) redrawAll(); }
+  };
+})();
+</script>
+<script>/* Setup sheet: reads an optional Fusion setup sheet, merges it with what the bundler already
+   knows from the G-code, and writes one printable page. Browser: window.Z1S. Node: module.exports. */
+(function (root) {
+  'use strict';
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /* ---------- reading a Fusion setup sheet ---------- */
+  function repair(s) { // Fusion double-encodes some symbols (the inch mark in "1/8″" comes out as "â³")
+    if (!/[\u00c2-\u00f4][\u0080-\u00bf]/.test(s)) return s;
+    for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 255) return s;
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(s, (c) => c.charCodeAt(0))); } catch (e) { return s; }
+  }
+  const decode = (s) => s.replace(/&nbsp;/g, ' ').replace(/&deg;/g, '°').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)).replace(/&amp;/g, '&');
+  const txt = (h) => repair(decode(String(h).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, ''))).replace(/\s+/g, ' ').trim();
+  function pairs(h) {
+    const d = {}, re = /<div class="description"[^>]*>([^<]*?)<\/div>\s*<div class="value"[^>]*>([\s\S]*?)<\/div>/g;
+    let m;
+    while ((m = re.exec(h))) { const k = txt(m[1]).replace(/:$/, '').trim(); if (k && !(k in d)) d[k] = txt(m[2]); }
+    return d;
+  }
+  const num = (v) => { const m = String(v == null ? '' : v).match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+  const svgOf = (h) => { const m = h.match(/<td class="toolimage"[^>]*>\s*(<svg[\s\S]*?<\/svg>)/i); return m ? m[1] : ''; };
+
+  function toolCells(block) { // [op or tool info, limits, holder/tool]
+    const c = block.split(/<td valign="top">/i);
+    return c.slice(1);
+  }
+  function toolFrom(h) {
+    const d = pairs(h), t = h.match(/<b>T(\d+)<\/b>/);
+    return { num: t ? +t[1] : null, type: d.Type || '', diameter: d.Diameter || '', length: d.Length || '', flutes: d.Flutes || '', description: d.Description || '', vendor: d.Vendor || '', taper: d['Taper Angle'] || '', tip: d['Tip Angle'] || '' };
+  }
+
+  function parseSheet(html) {
+    html = String(html || '');
+    if (!/Setup Sheet/i.test(html) || !/<th colspan="5">Operations<\/th>/i.test(html)) return null;
+    const bodyAt = html.search(/<body/i), body = bodyAt >= 0 ? html.slice(bodyAt) : html;
+    const noSvg = body.replace(/<svg[\s\S]*?<\/svg>/gi, '');
+    const out = { job: {}, ops: [], tools: {}, model: '' };
+
+    const head = noSvg.split(/Operation Summary/i)[0];
+    const jIdx = head.search(/<table class="job"/i), hd = txt(jIdx > 0 ? head.slice(0, jIdx) : head), jt = txt(jIdx > 0 ? head.slice(jIdx) : head);
+    let m;
+    if ((m = hd.match(/Job Description:\s*(.*?)\s*(?:Document Path:|$)/i))) out.job.description = m[1];
+    if ((m = hd.match(/Document Path:\s*(.*)$/i))) out.job.document = m[1];
+    if ((m = jt.match(/WCS:\s*#?(\d+)/i))) out.job.wcs = +m[1];
+    const dims = (label) => { const r = jt.match(new RegExp(label + ':\\s*DX:\\s*(-?[\\d.]+)\\s*mm\\s*DY:\\s*(-?[\\d.]+)\\s*mm\\s*DZ:\\s*(-?[\\d.]+)\\s*mm', 'i')); return r ? { x: +r[1], y: +r[2], z: +r[3] } : null; };
+    out.job.stock = dims('Stock'); out.job.part = dims('Part');
+    const lo = jt.match(/Stock Lower[^:]*:\s*X:\s*(-?[\d.]+)\s*mm\s*Y:\s*(-?[\d.]+)\s*mm\s*Z:\s*(-?[\d.]+)\s*mm/i), up = jt.match(/Stock Upper[^:]*:\s*X:\s*(-?[\d.]+)\s*mm\s*Y:\s*(-?[\d.]+)\s*mm\s*Z:\s*(-?[\d.]+)\s*mm/i);
+    if (lo) out.job.lower = { x: +lo[1], y: +lo[2], z: +lo[3] };
+    if (up) out.job.upper = { x: +up[1], y: +up[2], z: +up[3] };
+    const im = body.match(/<img[^>]+src="(data:image\/[a-z]+;base64,[^"]+)"/i);
+    if (im) out.model = im[1];
+
+    // summary table times (these include the approach moves, so they are the ones people recognise)
+    const summ = noSvg.match(/Operation Summary[\s\S]*?<\/table>/i);
+    const times = {};
+    if (summ) {
+      const rows = summ[0].split(/<tr>/i).slice(1);
+      rows.forEach((r) => { const c = [...r.matchAll(/<td class="value">([\s\S]*?)<\/td>/gi)].map((x) => txt(x[1])); if (c.length >= 4 && /^\d+$/.test(c[0])) times[+c[0]] = c[3]; });
+    }
+
+    // tools section
+    noSvg.split(/<th colspan="4">Tools<\/th>/i).slice(1).forEach((blk, i) => {
+      const cells = toolCells(blk.split(/<\/table>\s*<br>\s*<br>/i)[0]);
+      if (!cells.length) return;
+      const t = toolFrom(cells[0]);
+      if (t.num == null) return;
+      const holder = cells[2] ? pairs(cells[2]) : {};
+      t.holder = holder.Holder || ''; t.holderVendor = holder.Vendor || '';
+      const lim = cells[1] ? pairs(cells[1]) : {};
+      t.cycle = lim['Estimated Cycle Time'] || '';
+      out.tools[t.num] = Object.assign(out.tools[t.num] || {}, t);
+    });
+    // tool drawings: read from the original markup (the stripped copy has none)
+    body.split(/<th colspan="4">Tools<\/th>/i).slice(1).forEach((blk) => {
+      const tn = blk.match(/<b>T(\d+)<\/b>/), sv = svgOf(blk.slice(0, blk.search(/<\/table>\s*<br>\s*<br>/i) > 0 ? blk.search(/<\/table>\s*<br>\s*<br>/i) : blk.length));
+      if (tn && sv && out.tools[+tn[1]]) out.tools[+tn[1]].svg = sv;
+    });
+
+    // operations
+    noSvg.split(/<th colspan="5">Operations<\/th>/i).slice(1).forEach((blk) => {
+      const cells = toolCells(blk);
+      if (cells.length < 3) return;
+      const a = pairs(cells[0]), b = pairs(cells[1]);
+      const idx = txt(cells[0]).match(/Operation\s+(\d+)\s*\/\s*(\d+)/i);
+      const t = toolFrom(cells[2]);
+      out.ops.push({
+        n: idx ? +idx[1] : out.ops.length + 1, name: a.Description || '', strategy: a.Strategy || '', tolerance: a.Tolerance || '', stockToLeave: a['Stock to Leave'] || '',
+        stepdown: b['Maximum stepdown'] || a['Maximum stepdown'] || '', stepover: b['Maximum stepover'] || a['Maximum stepover'] || '',
+        coolant: b.Coolant || '', time: times[idx ? +idx[1] : out.ops.length + 1] || b['Estimated Cycle Time'] || '', tool: t
+      });
+    });
+    return out.ops.length ? out : null;
+  }
+
+  const norm = (s) => String(s || '').toLowerCase().replace(/^\s*op[\s_-]*\d+[\s_-]*/, '').replace(/^\s*\d+\s*[.)]\s+/, '').replace(/^t\d+\s+/, '').replace(/[^a-z0-9]+/g, '');
+  function matchOps(sheet, names) { // -> array parallel to names, each a sheet op or null
+    if (!sheet) return names.map(() => null);
+    const used = new Set(), out = names.map((n) => {
+      const k = norm(n), i = sheet.ops.findIndex((o, j) => !used.has(j) && norm(o.name) === k);
+      if (i >= 0) { used.add(i); return sheet.ops[i]; }
+      return null;
+    });
+    if (out.every((x) => !x) && sheet.ops.length === names.length) return sheet.ops.slice();
+    return out;
+  }
+
+  /* ---------- toolpath pictures (browser only) ---------- */
+  function ramp(t) { // shallow = pale, deep = dark teal-blue
+    t = Math.max(0, Math.min(1, t));
+    const a = [112, 200, 190], b = [24, 54, 128];
+    return 'rgb(' + a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',') + ')';
+  }
+  function previews(result, stock, colorOf) {
+    if (typeof document === 'undefined' || !result) return [];
+    const bb = result.bbox, st = stock && stock.l ? { x0: 0, y0: 0, x1: stock.l, y1: stock.w } : null;
+    const minx = Math.min(bb.minx, st ? st.x0 : bb.minx), maxx = Math.max(bb.maxx, st ? st.x1 : bb.maxx);
+    const miny = Math.min(bb.miny, st ? st.y0 : bb.miny), maxy = Math.max(bb.maxy, st ? st.y1 : bb.maxy);
+    const W = 640, H = 480, pad = 30, bw = Math.max(maxx - minx, 1), bh = Math.max(maxy - miny, 1);
+    const sc = Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh), ox = (W - bw * sc) / 2, oy = (H + bh * sc) / 2;
+    const X = (x) => ox + (x - minx) * sc, Y = (y) => oy - (y - miny) * sc;
+    const zlo = Math.min(bb.minz, -0.001);
+    const base = () => {
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d');
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+      if (st) { g.fillStyle = '#f4f1ea'; g.fillRect(X(st.x0), Y(st.y1), (st.x1 - st.x0) * sc, (st.y1 - st.y0) * sc); g.strokeStyle = '#b9b2a2'; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(X(st.x0), Y(st.y1), (st.x1 - st.x0) * sc, (st.y1 - st.y0) * sc); g.setLineDash([]); }
+      g.lineJoin = 'round'; g.lineCap = 'round';
+      return { c, g };
+    };
+    const label = (g) => { g.fillStyle = '#4a5262'; g.font = '600 19px system-ui, "Segoe UI", sans-serif'; g.fillText('X ' + minx.toFixed(0) + ' to ' + maxx.toFixed(0) + ',  Y ' + miny.toFixed(0) + ' to ' + maxy.toFixed(0) + ' mm', 12, H - 10); };
+    const draw = (g, o, colour, width) => { // cutting moves below the stock top, coloured by depth unless a fixed colour is given
+      let xy = 0, px = null, py = null, pz = 0;
+      o.events.forEach((e) => { if (e.z != null) pz = e.z; if (e.x != null && e.y != null) { if (e.g === 1 && px != null && pz < 0.05) xy += Math.hypot(e.x - px, e.y - py); px = e.x; py = e.y; } });
+      const drilling = xy < 5; // a drill cycle has no sideways cutting, so mark each hole instead
+      px = null; py = null; pz = 0; g.lineWidth = width;
+      o.events.forEach((e) => {
+        if (e.z != null) pz = e.z;
+        if (e.x == null || e.y == null) return;
+        if (e.g === 1 && px != null && pz < 0.05) {
+          if (drilling && e.x === px && e.y === py) { if (pz < -0.5) { g.fillStyle = colour || ramp(pz / zlo); g.beginPath(); g.arc(X(px), Y(py), 5.5, 0, 6.2832); g.fill(); } }
+          else { g.strokeStyle = colour || ramp(pz / zlo); g.beginPath(); g.moveTo(X(px), Y(py)); g.lineTo(X(e.x), Y(e.y)); g.stroke(); }
+        }
+        px = e.x; py = e.y;
+      });
+    };
+    const out = result.outOps.map((op, k) => {
+      const { c, g } = base();
+      for (let j = 0; j < k; j++) draw(g, result.outOps[j], '#cfd3da', 1.2); // earlier toolpaths in grey for context
+      draw(g, op, null, 2);
+      label(g);
+      return c.toDataURL('image/png');
+    });
+    const o = base();
+    result.outOps.forEach((op) => draw(o.g, op, colorOf ? colorOf(op.slot) : '#555', 1.4));
+    label(o.g);
+    out.overview = o.c.toDataURL('image/png');
+    return out;
+  }
+
+  /* ---------- the page ---------- */
+  const n2 = (v) => (v == null || !isFinite(v) ? '' : String(Math.round(v * 100) / 100));
+  function dur(s) {
+    s = Math.round(s); if (s < 60) return s + ' s';
+    const m = Math.floor(s / 60), r = s % 60;
+    return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' m' : m + ' m ' + String(r).padStart(2, '0') + ' s';
+  }
+  const parseDur = (t) => { if (!t) return null; let s = 0, any = false; (String(t).match(/(\d+)\s*h/i) || []).slice(1, 2).forEach((v) => { s += +v * 3600; any = true; }); (String(t).match(/(\d+)\s*m/i) || []).slice(1, 2).forEach((v) => { s += +v * 60; any = true; }); (String(t).match(/(\d+)\s*s/i) || []).slice(1, 2).forEach((v) => { s += +v; any = true; }); return any ? s : null; };
+  const nice = (s) => String(s || '').replace(/a\?3/g, '\u2033');
+  const kv = (rows) => rows.filter((r) => r[1] !== '' && r[1] != null).map((r) => `<tr><th>${esc(r[0])}</th><td>${esc(r[1])}</td></tr>`).join('');
+
+  function build(ctx) {
+    const r = ctx.result, sheet = ctx.sheet || null, settings = ctx.settings || {}, st = settings.stock || {};
+    const names = r.ops.map((o) => o.name), sm = matchOps(sheet, names);
+    const pics = ctx.previews || [];
+    const date = (ctx.date || new Date());
+    const dstr = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+    const title = (ctx.project || settings.project || 'Job');
+    const bb = r.bbox;
+
+    // per-operation merged rows
+    const ops = r.ops.map((o, i) => {
+      const src = ctx.ops && ctx.ops[i], tm = src && ctx.toolMap ? ctx.toolMap.get(src.toolKey) : null, s = sm[i], ft = s && s.tool && s.tool.num != null && sheet.tools[s.tool.num] ? Object.assign({}, sheet.tools[s.tool.num], s.tool) : (s ? s.tool : null);
+      const fusionT = src ? src.tool.num : null;
+      return { i, o, s, tm, ft, fusionT, time: s && parseDur(s.time) != null ? parseDur(s.time) : o.timeSec, timeFrom: s && parseDur(s.time) != null ? 'Fusion' : 'bundle' };
+    });
+    const totalTime = ops.reduce((a, x) => a + x.time, 0);
+
+    // tools in order of first use
+    const toolOrder = [];
+    ops.forEach((x) => { if (!toolOrder.includes(x.o.slot)) toolOrder.push(x.o.slot); });
+    const toolRows = toolOrder.map((slot) => {
+      const users = ops.filter((x) => x.o.slot === slot), first = users[0], tm = first.tm, ft = (users.find((u) => u.ft) || {}).ft || null, t = tm ? tm.tool : {};
+      const svg = ft && sheet && sheet.tools[ft.num] ? sheet.tools[ft.num].svg : '';
+      return { slot, users, tm, t, ft, svg, time: users.reduce((a, x) => a + x.time, 0) };
+    });
+
+    const css = `
+:root{--ink:#1b2230;--mut:#5b6372;--line:#d7dbe2;--soft:#f3f5f8;--acc:#1f5fbf;--warn:#9a5b00}
+*{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;background:#e9ecf1;color:var(--ink);font:13px/1.45 system-ui,"Segoe UI",Roboto,Arial,sans-serif}
+.bar{position:sticky;top:0;background:#1b2230;color:#fff;padding:8px 16px;display:flex;gap:12px;align-items:center;z-index:2}
+.bar b{font-weight:600}.bar span{opacity:.7;font-size:12px}.bar button{margin-left:auto;font:inherit;background:#fff;color:#1b2230;border:0;border-radius:6px;padding:6px 14px;font-weight:600;cursor:pointer}
+.page{width:19cm;max-width:100%;margin:16px auto;background:#fff;padding:1.1cm 1.2cm;box-shadow:0 1px 6px rgba(0,0,0,.15)}
+h1{font-size:20px;margin:0 0 2px}h2{font-size:14px;margin:22px 0 8px;padding-bottom:4px;border-bottom:2px solid var(--ink)}
+.sub{color:var(--mut);margin:0 0 14px}
+.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 6px}
+.meta div{background:var(--soft);border-radius:6px;padding:8px 10px}.meta b{display:block;font-size:16px}.meta span{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:4px 7px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--soft);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);border-bottom:1px solid var(--ink)}
+.r{text-align:right;font-variant-numeric:tabular-nums}.mut{color:var(--mut)}
+tr.chg td{background:#fff6e3;border-top:1px solid #e3b95c;color:var(--warn);font-weight:600}
+.box{width:13px;height:13px;border:1.5px solid var(--ink);border-radius:2px;display:inline-block;vertical-align:-2px}
+.chip{display:inline-block;min-width:26px;text-align:center;border-radius:5px;padding:0 6px;font-weight:700;color:#fff;background:var(--c,#555)}
+.job{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}.job img{width:100%;border:1px solid var(--line);border-radius:6px}
+.kv th{width:36%;color:var(--mut);font-weight:500}
+.tool{display:grid;grid-template-columns:70px 1fr;gap:12px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line);break-inside:avoid}
+.tool svg{width:64px;height:auto;max-height:110px;border:1px solid var(--line);border-radius:4px}.tool .ph{width:64px;height:64px;border:1px dashed var(--line);border-radius:4px}
+.tool h3{margin:0 0 3px;font-size:13px}
+.opc{break-inside:avoid;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 12px}
+.opc header{display:flex;gap:8px;align-items:baseline;margin-bottom:6px}.opc h3{margin:0;font-size:14px}.opc .n{color:var(--mut);font-weight:600}
+.opc .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.opc img{width:100%;border:1px solid var(--line);border-radius:4px}
+.note{margin-top:18px;color:var(--mut);font-size:11px}
+.gen{margin-top:6px;color:var(--mut);font-size:10.5px}
+@page{size:A4;margin:10mm}
+@media print{body{background:#fff}.bar{display:none}.page{margin:0;box-shadow:none;width:auto;padding:0}h2{break-after:avoid}}
+@media (max-width:640px){.page{padding:14px}.meta{grid-template-columns:1fr 1fr}.job,.opc .grid{grid-template-columns:1fr}}`;
+
+    const colour = ctx.colorOf || (() => '#555');
+    const stockTxt = sheet && sheet.job.stock ? `${n2(sheet.job.stock.x)} × ${n2(sheet.job.stock.y)} × ${n2(sheet.job.stock.z)} mm` : (st.l ? `${n2(st.l)} × ${n2(st.w)} × ${n2(st.h)} mm` : '');
+    const partTxt = sheet && sheet.job.part ? `${n2(sheet.job.part.x)} × ${n2(sheet.job.part.y)} × ${n2(sheet.job.part.z)} mm` : '';
+    const wcsTxt = sheet && sheet.job.wcs ? `Fusion WCS #${sheet.job.wcs} (G54)` : 'G54';
+    const jobRows = kv([
+      ['Fusion document', sheet && sheet.job.document], ['Fusion setup', sheet && sheet.job.description], ['Machine', ctx.machine || ''], ['Work offset', wcsTxt],
+      ['Stock', stockTxt], ['Finished part', partTxt],
+      ['Zero', sheet && sheet.job.lower && sheet.job.upper ? `X0 Y0 at stock corner, Z0 at stock top (stock Z ${n2(sheet.job.lower.z)} to ${n2(sheet.job.upper.z)} mm)` : 'Z0 at stock top. Set X and Y zero to match the Fusion setup.'],
+      ['Toolpath extents', `X ${n2(bb.minx)} to ${n2(bb.maxx)}, Y ${n2(bb.miny)} to ${n2(bb.maxy)}, Z ${n2(bb.minz)} to ${n2(bb.maxz)} mm (top is the safe height)`],
+      ['Program file', ctx.fileName || '']
+    ]);
+
+    let h = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup sheet - ${esc(title)}</title><style>${css}</style></head><body>
+<div class="bar"><b>Setup sheet</b><span>${esc(title)}</span><button type="button" onclick="window.print()">Print or save as PDF</button></div>
+<div class="page">
+<h1>${esc(title)}</h1><p class="sub">Setup sheet · ${esc(ctx.machine || '')} · ${dstr}</p>
+<div class="meta"><div><b>${ops.length}</b><span>toolpaths</span></div><div><b>${toolRows.length}</b><span>tools</span></div><div><b>${ops.filter((x, k) => k > 0 && x.o.slot !== ops[k - 1].o.slot).length}</b><span>tool changes</span></div><div><b>${dur(totalTime)}</b><span>est. run time</span></div></div>
+
+<h2>Job</h2><div class="job"><table class="kv">${jobRows}</table>${sheet && sheet.model ? `<img src="${esc(sheet.model)}" alt="Model from Fusion">` : (pics.overview ? `<img src="${pics.overview}" alt="All toolpaths, coloured by tool">` : '<div></div>')}</div>
+
+<h2>Run order</h2>
+<table><thead><tr><th></th><th>#</th><th>Operation</th><th>Tool</th><th>Strategy</th><th class="r">Depth</th><th class="r">Feed</th><th class="r">RPM</th><th class="r">Time</th></tr></thead><tbody>`;
+    let prev = null;
+    ops.forEach((x) => {
+      const o = x.o, t = x.tm ? x.tm.tool : {}, tname = nice((x.ft && x.ft.description) || (x.tm && x.tm.lib && x.tm.lib.name) || t.name || '');
+      if (o.slot !== prev) h += `<tr class="chg"><td colspan="9">${prev == null ? 'Load' : 'Change to'} tool T${o.slot}: ${esc(tname)}${x.ft && x.ft.diameter ? ' · ' + esc(x.ft.diameter) : t.d ? ' · ' + n2(t.d) + ' mm' : ''}</td></tr>`;
+      prev = o.slot;
+      h += `<tr><td><span class="box"></span></td><td>${x.i + 1}</td><td>${esc(o.name)}</td><td><span class="chip" style="--c:${colour(o.slot)}">T${o.slot}</span></td><td>${esc((x.s && x.s.strategy) || '')}</td><td class="r">${n2(o.zmin)} mm</td><td class="r">${n2(o.fmax)}</td><td class="r">${n2(o.spindle)}</td><td class="r">${dur(x.time)}</td></tr>`;
+    });
+    h += `</tbody></table><p class="note">Depth is the lowest Z of the toolpath (Z0 is the stock top). Feed is the highest cutting feed in mm/min. ${sheet ? 'Times are Fusion\'s estimates from the setup sheet.' : 'Times are approximate, worked out from the G-code.'}</p>
+
+<h2>Tools</h2>`;
+    toolRows.forEach((tr) => {
+      const ft = tr.ft || {}, t = tr.t, ops_ = tr.users.map((u) => u.i + 1).join(', ');
+      const dia = ft.diameter || (t.d ? n2(t.d) + ' mm' : '');
+      const type = ft.type || (t.kindText || t.kind || '');
+      const taper = ft.taper || (t.taper && t.kind !== 'drill' ? n2(t.taper) + '°' : '');
+      h += `<div class="tool"><div>${tr.svg || '<div class="ph"></div>'}</div><div><h3><span class="chip" style="--c:${colour(tr.slot)}">T${tr.slot}</span> ${esc(nice(ft.description || (tr.tm && tr.tm.lib && tr.tm.lib.name) || t.name || ''))}</h3>
+<table class="kv">${kv([['Type', type], ['Diameter', dia], ['Taper / tip angle', taper || ft.tip || ''], ['Flutes', ft.flutes], ['Length', ft.length], ['Holder', ft.holder], ['Vendor', ft.vendor], ['Used in toolpaths', ops_], ['Time on this tool', dur(tr.time)], ['Fusion tool number', tr.users[0].fusionT != null && tr.users[0].fusionT !== tr.slot ? 'T' + tr.users[0].fusionT : '']])}</table></div></div>`;
+    });
+    h += `<h2>Toolpaths</h2>`;
+    ops.forEach((x) => {
+      const o = x.o, s = x.s || {};
+      h += `<section class="opc"><header><span class="n">${x.i + 1}</span><h3>${esc(o.name)}</h3><span class="chip" style="--c:${colour(o.slot)}">T${o.slot}</span></header><div class="grid"><table class="kv">${kv([
+        ['Strategy', s.strategy], ['Tolerance', s.tolerance], ['Stock to leave', s.stockToLeave], ['Max stepdown', s.stepdown], ['Max stepover', s.stepover],
+        ['Lowest Z', n2(o.zmin) + ' mm'], ['Max feed', n2(o.fmax) + ' mm/min'], ['Spindle', n2(o.spindle) + ' rpm'], ['Cutting distance', n2(o.cutLen) + ' mm'], ['Est. time', dur(x.time)], ['Coolant', s.coolant]
+      ])}</table>${pics[x.i] ? `<img src="${pics[x.i]}" alt="Toolpath ${x.i + 1}">` : '<div></div>'}</div></section>`;
+    });
+    h += `<p class="note">Pictures are top views. The current toolpath is coloured by depth (pale is shallow, dark is deep); earlier toolpaths are grey; the dashed box is the stock.</p>
+<p class="gen">Made with Fusion to Z1 Bundler on ${dstr}. ${sheet ? 'Stock, strategy, stepdown, stepover, holder and tool details come from the Fusion setup sheet; everything else is read from the G-code.' : 'Everything here is read from the G-code. Add a Fusion setup sheet to include stock, strategy, stepdown and holder details.'}</p>
+</div></body></html>`;
+    return h;
+  }
+
+  const api = { parseSheet, matchOps, previews, build };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Z1S = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>/* App: files, run order, tool slots, settings, checks, export. Talks to Z1B (engine), Z1V (viewer), Z1S (setup sheet). */
+(function () {
+  'use strict';
+  const Z = window.Z1B, V = window.Z1V, S = window.Z1S;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const colorOf = V.colorOf;
+  const icon = (n, cls) => `<svg class="i${cls ? ' ' + cls : ''}"><use href="#i-${n}"/></svg>`;
+
+  /* ---------- persistence (optional) ---------- */
+  const LS = 'z1bundler.v1', UIK = 'z1bundler.ui5';
+  const rd = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } };
+  const wr = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } };
+  const saved = rd(LS), ui = Object.assign({ right: true, tab: 'basic', gopen: false, gh: 230, hint: true }, rd(UIK));
+  const saveUI = () => wr(UIK, ui);
+  const settings = Object.assign({}, Z.DEFAULTS, saved.settings || {});
+  settings.stock = Object.assign({}, Z.DEFAULTS.stock, (saved.settings || {}).stock || {});
+  const prefs = saved.prefs || {};
+  const save = () => wr(LS, { settings, prefs });
+
+  /* ---------- state ---------- */
+  let files = [], orderIds = [], items = [];
+  let result = null, toolMap = null, includedOps = [];
+  let isExample = false, fileNameEdited = false, timer = null;
+  let sel = null, focusId = null, nowOp = -1, lastErrs = 0, fusionSheet = null, sheetName = '';
+  const openTools = new Set();
+  // Folder memory (Chrome / Edge): a handle to one of the added files lets the save dialog open in that same folder.
+  let srcHandle = null, fsOff = false;
+  const FS = () => !fsOff && !!window.showOpenFilePicker && !!window.showSaveFilePicker;
+  async function pickFiles(input) {
+    try {
+      const hs = await window.showOpenFilePicker({ multiple: true, id: 'z1src', types: [{ description: 'Fusion G-code or setup sheet', accept: { 'text/plain': ['.cnc', '.nc', '.txt', '.tap', '.gcode'], 'text/html': ['.html', '.htm'] } }] });
+      const fs = await Promise.all(hs.map((h) => h.getFile()));
+      const g = hs.find((h) => !/\.html?$/i.test(h.name)); if (g) srcHandle = g;
+      readFiles(fs);
+    } catch (e) { if (e && e.name === 'AbortError') return; fsOff = true; input.click(); }
+  }
+
+  /* ---------- helpers ---------- */
+  function toast(msg, opts) {
+    const t = $('toast'); t.innerHTML = '';
+    const s = document.createElement('span'); s.textContent = msg; t.appendChild(s);
+    if (opts && opts.undo) { const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Undo'; b.onclick = () => { t.hidden = true; opts.undo(); }; t.appendChild(b); }
+    t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, (opts && opts.ms) || (opts && opts.undo ? 7000 : 3200));
+  }
+  const fmtTime = (s) => { if (s < 60) return Math.max(1, Math.round(s)) + ' s'; const m = Math.round(s / 60); return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min' : m + ' min'; };
+  const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+  const r2 = (v) => Z.fmt(Math.round(v * 100) / 100);
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const incIndex = (id) => { let k = 0; for (const it of items) { if (it.op && it.include) { if (it.id === id) return k; k++; } } return -1; };
+  const rowOf = (id) => document.querySelector('#ops .op[data-id="' + CSS.escape(id) + '"]');
+  const byOp = (a, b) => {
+    const na = a.op ? a.op.opNumber : null, nb = b.op ? b.op.opNumber : null;
+    if (na != null && nb != null && na !== nb) return na - nb;
+    return a.file.name.localeCompare(b.file.name, undefined, { numeric: true });
+  };
+
+  /* ---------- files ---------- */
+  function reparseAll() { files.forEach((f) => { f.parsed = Z.parseFusion(f.text, f.name, { tol: settings.tol }); }); syncItems(); }
+  function syncItems() {
+    const prev = new Map(items.map((i) => [i.id, i]));
+    const list = [];
+    files.forEach((f) => {
+      if (!f.parsed.ops.length) list.push({ id: f.name + '#x', failed: true, file: f });
+      f.parsed.ops.forEach((op, k) => { const id = f.name + '#' + k; list.push({ id, op, file: f, include: prev.has(id) ? prev.get(id).include : true }); });
+    });
+    list.sort((a, b) => {
+      const ia = orderIds.indexOf(a.id), ib = orderIds.indexOf(b.id);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1; if (ib >= 0) return 1;
+      return byOp(a, b);
+    });
+    items = list; orderIds = items.map((i) => i.id);
+    if (sel && !items.some((i) => i.id === sel && i.op)) sel = null;
+  }
+  function addFileObjs(objs) {
+    if (isExample) { files = []; items = []; orderIds = []; isExample = false; sel = null; }
+    objs.forEach((o) => {
+      files = files.filter((f) => f.name !== o.name);
+      files.push({ name: o.name, size: o.text.length, text: o.text, parsed: Z.parseFusion(o.text, o.name, { tol: settings.tol }) });
+    });
+    syncItems(); schedule(0);
+  }
+  function readFiles(list) {
+    let arr = Array.from(list || []);
+    const sheets = arr.filter((f) => /\.html?$/i.test(f.name));
+    if (sheets.length) { readSheet(sheets[0]); arr = arr.filter((f) => !/\.html?$/i.test(f.name)); }
+    if (!arr.length) return;
+    Promise.all(arr.map((f) => new Promise((res) => { const r = new FileReader(); r.onload = () => res({ name: f.name, text: String(r.result) }); r.onerror = () => res(null); r.readAsText(f); })))
+      .then((objs) => {
+        objs = objs.filter(Boolean); addFileObjs(objs);
+        const names = new Set(objs.map((o) => o.name)), mine = files.filter((f) => names.has(f.name));
+        const n = mine.reduce((a, f) => a + f.parsed.ops.length, 0), bad = mine.filter((f) => !f.parsed.ops.length).length;
+        toast('Added ' + plural(n, 'toolpath') + ' from ' + plural(objs.length, 'file') + (bad ? '. ' + bad + ' could not be read.' : ''), bad ? { ms: 5000 } : null);
+      });
+  }
+  function loadExample() {
+    files = []; items = []; orderIds = []; sel = null; isExample = false;
+    addFileObjs(window.Z1_SAMPLES.map((s) => ({ name: s.name, text: s.text })));
+    isExample = true;
+    toast('Example loaded. Your own files will replace it.');
+  }
+  const snap = () => ({ files: files.slice(), orderIds: orderIds.slice(), inc: new Map(items.map((i) => [i.id, i.include])), isExample, sel });
+  function restore(s) {
+    files = s.files; orderIds = s.orderIds; isExample = s.isExample; items = []; syncItems();
+    items.forEach((i) => { if (s.inc.has(i.id)) i.include = s.inc.get(i.id); });
+    sel = s.sel; schedule(0);
+  }
+
+  /* ---------- Fusion setup sheet ---------- */
+  function readSheet(file) {
+    const r = new FileReader();
+    r.onload = () => {
+      const sh = S.parseSheet(String(r.result));
+      if (!sh) { toast('That does not look like a Fusion setup sheet', { ms: 4500 }); return; }
+      fusionSheet = sh; sheetName = file.name;
+      const note = []; // carry over what the sheet knows: stock size and the project name
+      if (sh.job.stock) { settings.stock = { l: sh.job.stock.x, w: sh.job.stock.y, h: sh.job.stock.z }; $('s-l').value = sh.job.stock.x; $('s-w').value = sh.job.stock.y; $('s-h').value = sh.job.stock.z; note.push('stock size'); }
+      if ((!settings.project || settings.project === 'Job') && sh.job.document) { settings.project = sh.job.document; $('s-project').value = settings.project; fileNameEdited = false; note.push('project name'); }
+      save(); schedule(0);
+      toast('Setup sheet added' + (note.length ? '. Took the ' + note.join(' and ') + ' from it.' : '.'), { ms: 5000 });
+    };
+    r.readAsText(file);
+  }
+  function renderSheetState() {
+    const el = $('sh-state'); $('sh-rm').hidden = !fusionSheet; $('sh-dl').disabled = !result;
+    if (!fusionSheet) { el.textContent = 'Adds stock, strategy and stepdown details to the sheet.'; return; }
+    const names = includedOps.map((o) => o.name), m = S.matchOps(fusionSheet, names), hit = m.filter(Boolean).length;
+    el.textContent = sheetName + ' · ' + hit + ' of ' + names.length + ' toolpaths matched by name.';
+  }
+  function openSheet() {
+    if (!result) return;
+    const html = S.build({ result, ops: includedOps, toolMap, settings, sheet: fusionSheet, previews: S.previews(result, settings.stock, colorOf), colorOf, machine: 'Makera Z1', project: settings.project, fileName: $('fname').value || defaultName() });
+    const blob = new Blob([html], { type: 'text/html' }), url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (!w) { const a = document.createElement('a'); a.href = url; a.download = ((settings.project || 'Job').replace(/[^A-Za-z0-9]+/g, '_') + '_setup_sheet.html'); document.body.appendChild(a); a.click(); a.remove(); toast('Pop-up blocked, so the setup sheet was saved instead'); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  /* ---------- recompute ---------- */
+  function schedule(ms) { clearTimeout(timer); timer = setTimeout(recompute, ms == null ? 250 : ms); }
+  function recompute() {
+    includedOps = items.filter((i) => i.op && i.include).map((i) => i.op);
+    toolMap = Z.resolveTools(includedOps, prefs);
+    result = includedOps.length ? Z.build(includedOps, toolMap, Object.assign({}, settings, { stock: settings.stock })) : null;
+    render();
+  }
+  function render() {
+    $('app').classList.toggle('noprev', !result);
+    renderOps(); renderTools(); renderChecks(); renderSheetState(); renderAdv();
+    V.update(result, toolMap, settings);
+    $('vempty').hidden = items.length > 0; $('vnone').hidden = !items.length || !!result;
+    $('vhint').hidden = !ui.hint || !result;
+    V.setFocus(sel ? incIndex(sel) : -1);
+    markNow();
+  }
+
+  /* ---------- left: toolpaths ---------- */
+  function renderOps() {
+    const wrap = $('ops'), act = document.activeElement;
+    const fid = focusId || (act && act.classList && act.classList.contains('op') && wrap.contains(act) ? act.dataset.id : null);
+    focusId = null; wrap.innerHTML = '';
+    const nOps = items.filter((i) => i.op).length;
+    $('n-ops').textContent = nOps || ''; $('ops-hint').hidden = nOps < 2; $('ops-more').hidden = !items.length;
+    if (!items.length) { wrap.innerHTML = '<p class="empty">Nothing here yet. Add your Fusion files to begin.</p>'; return; }
+    let seq = 0, prevSlot = null;
+    items.forEach((it, idx) => {
+      const row = document.createElement('div');
+      row.dataset.idx = idx; row.dataset.id = it.id; row.draggable = true; row.tabIndex = 0;
+      if (it.failed) {
+        row.className = 'op failed';
+        row.innerHTML = `<div class="op-h"><span class="grip" aria-hidden="true"></span><span></span><span class="seq">!</span><div class="nm"><b>${esc(it.file.name)}</b><small>Could not be read. See the checks.</small></div><button class="btn icon ghost sm" type="button" data-act="rm" aria-label="Remove ${esc(it.file.name)}" title="Remove">${icon('x')}</button></div>`;
+      } else {
+        const o = it.op, tm = toolMap && toolMap.get(o.toolKey), isSel = sel === it.id;
+        let s = null;
+        if (it.include) {
+          s = result ? result.ops[seq] : null; seq++;
+          if (tm && prevSlot !== null && tm.slot !== prevSlot) { const d = document.createElement('div'); d.className = 'chgline'; d.style.setProperty('--c', colorOf(tm.slot)); d.innerHTML = `<i></i>Tool change to T${tm.slot}`; wrap.appendChild(d); }
+          if (tm) prevSlot = tm.slot;
+        }
+        row.className = 'op' + (it.include ? '' : ' off') + (isSel ? ' sel' : '');
+        if (tm) row.style.setProperty('--c', colorOf(tm.slot));
+        row.setAttribute('aria-expanded', isSel ? 'true' : 'false');
+        const sub = s ? `${fmtTime(s.timeSec)} · down to Z${r2(s.zmin)}` : it.include ? esc(o.file) : 'Left out of the bundle';
+        let h = `<div class="op-h"><span class="grip" aria-hidden="true" title="Drag to reorder"></span><input type="checkbox" data-act="inc" ${it.include ? 'checked' : ''} aria-label="Include ${esc(o.name)}" title="Include in the bundle"><span class="seq">${it.include ? seq : '–'}</span><div class="nm"><b>${esc(o.name)}</b><small>${sub}</small></div>${tm ? `<button class="chip" type="button" data-act="tool" title="Show this tool">T${tm.slot}</button>` : ''}</div>`;
+        if (isSel) {
+          const kv = [];
+          if (s) kv.push(['Tool', `Fusion T${o.tool.num} → Z1 slot T${s.slot}`], ['Spindle', Z.fmt(s.spindle) + ' rpm'], ['Max feed', Z.fmt(s.fmax) + ' mm/min'], ['Depth', 'Z ' + r2(s.zmin) + ' to ' + r2(s.zmax) + ' mm'], ['Cutting path', s.cutLen.toFixed(0) + ' mm'], ['G-code lines', o.srcLines.toLocaleString() + ' → ' + s.lines.toLocaleString()]);
+          else kv.push(['Fusion tool', `T${o.tool.num} ${esc(o.tool.name)}`], ['G-code lines', o.srcLines.toLocaleString()]);
+          if (o.arcs) kv.push(['Arcs', o.arcs + ' → ' + o.arcSegs.toLocaleString() + ' segments']);
+          kv.push(['File', esc(o.file)]);
+          h += `<div class="opd"><dl class="kv">${kv.map((r) => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl><div class="acts">${s ? `<button class="btn sm" type="button" data-act="play">${icon('play', 'f')}Play from here</button>` : ''}<span class="sp"></span><button class="btn sm icon" type="button" data-act="up" title="Move earlier (Alt+↑)" aria-label="Move earlier">${icon('up')}</button><button class="btn sm icon" type="button" data-act="down" title="Move later (Alt+↓)" aria-label="Move later">${icon('dn')}</button><button class="btn sm icon danger" type="button" data-act="rm" title="Remove (Del)" aria-label="Remove">${icon('x')}</button></div></div>`;
+        }
+        row.innerHTML = h;
+      }
+      wrap.appendChild(row);
+    });
+    if (fid) { const r = rowOf(fid); if (r) r.focus({ preventScroll: true }); }
+  }
+  function markNow() {
+    document.querySelectorAll('#ops .op.now').forEach((r) => r.classList.remove('now'));
+    if (nowOp < 0 || !result) return;
+    let k = 0;
+    for (const it of items) if (it.op && it.include) { if (k === nowOp) { const r = rowOf(it.id); if (r) r.classList.add('now'); break; } k++; }
+  }
+  V.on.op = (o) => { nowOp = o; markNow(); };
+  function setSel(id) { sel = id; renderOps(); V.setFocus(sel ? incIndex(sel) : -1); markNow(); }
+  function move(idx, to) {
+    if (to < 0 || to >= items.length || idx === to) return;
+    const [x] = items.splice(idx, 1); items.splice(to, 0, x); orderIds = items.map((i) => i.id); focusId = focusId || null; schedule(0);
+  }
+  function removeItem(it) {
+    const s = snap();
+    files = files.filter((f) => f !== it.file); if (!files.length) isExample = false;
+    syncItems(); schedule(0);
+    toast('Removed ' + it.file.name, { undo: () => restore(s) });
+  }
+
+  /* ---------- left: tools ---------- */
+  function renderTools() {
+    const tw = $('tools'); tw.innerHTML = '';
+    const has = !!(toolMap && toolMap.size);
+    $('tools-sec').hidden = !has; $('n-tools').textContent = has ? toolMap.size : '';
+    if (!has) return;
+    const by = new Map(); toolMap.forEach((tm) => { by.set(tm.slot, (by.get(tm.slot) || 0) + 1); });
+    toolMap.forEach((tm) => {
+      const t = tm.tool, clash = by.get(tm.slot) > 1, open = clash || openTools.has(tm.key);
+      const users = includedOps.map((o, i) => [o, i]).filter((x) => x[0].toolKey === tm.key).map((x) => x[1] + 1);
+      const el = document.createElement('div');
+      el.className = 'tl' + (open ? ' open' : '') + (clash ? ' clash' : ''); el.dataset.key = tm.key; el.style.setProperty('--c', colorOf(tm.slot));
+      const flag = clash ? '<span class="flag err">Slot clash</span>' : tm.custom ? '<span class="flag" title="Not in the Z1 tool list, so the header uses default dimensions">Custom</span>' : '';
+      let h = `<button class="tl-h" type="button" aria-expanded="${open}"><span class="dot"></span><div class="nm"><b>T${tm.slot} · ${esc(tm.lib.name)}</b><small>Fusion T${t.num} ${esc(t.name)}</small></div>${flag}${icon('chev')}</button>`;
+      if (open) {
+        const opts = Z.LIB.map((l) => `<option value="${l.id}" ${!tm.custom && tm.lib.id === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('') + `<option value="custom" ${tm.custom ? 'selected' : ''}>Not in the list (custom)</option>`;
+        h += `<div class="tl-b tool" data-key="${esc(tm.key)}">
+          ${clash ? '<div class="msg err">Another tool uses this slot. Give each tool its own slot number.</div>' : ''}
+          <div class="two"><label class="f"><span>Z1 tool</span><select data-act="lib">${opts}</select></label><label class="f"><span>Slot</span><input type="number" min="1" max="99" step="1" value="${tm.slot}" data-act="slot"></label></div>
+          ${tm.custom ? `<label class="f"><span>Name written in the header</span><input type="text" value="${esc(tm.lib.name)}" data-act="tname"></label>` : ''}
+          <div class="msg">Ø${Z.fmt(t.d)} mm${t.taper ? ' · ' + Z.fmt(t.taper) + '° half-angle' : ''}${t.kindText ? ' · ' + esc(t.kindText) : ''} · used by toolpath${users.length === 1 ? '' : 's'} ${users.join(', ')}</div>
+        </div>`;
+      }
+      el.innerHTML = h; tw.appendChild(el);
+    });
+  }
+  function toolChange(e) {
+    const row = e.target.closest('.tool'); if (!row) return;
+    const key = row.dataset.key, act = e.target.dataset.act, tm = toolMap.get(key); if (!tm) return;
+    const p = prefs[key] = prefs[key] || {};
+    if (act === 'lib') { p.lib = e.target.value; const lib = Z.LIB.find((l) => l.id === p.lib); p.slot = lib ? lib.slot : tm.slot; }
+    else if (act === 'slot') { p.slot = Math.max(1, parseInt(e.target.value, 10) || 1); if (!p.lib) p.lib = tm.custom ? 'custom' : tm.lib.id; }
+    else if (act === 'tname') { p.name = e.target.value; p.lib = 'custom'; if (!p.slot) p.slot = tm.slot; }
+    else return;
+    openTools.add(key); save(); schedule(0);
+  }
+
+  /* ---------- checks, summary, export button ---------- */
+  function aggregate() {
+    const dropped = {}, warns = [], errs = [], seen = new Set();
+    items.forEach((it) => {
+      const f = it.file; if (seen.has(f.name)) return; seen.add(f.name);
+      const inc = items.some((x) => x.file === f && x.op && x.include) || items.some((x) => x.file === f && x.failed);
+      if (!inc) return;
+      f.parsed.errors.forEach((e) => errs.push(e)); f.parsed.warnings.forEach((w) => warns.push(w));
+      Object.keys(f.parsed.dropped).forEach((k) => { dropped[k] = (dropped[k] || 0) + f.parsed.dropped[k]; });
+    });
+    return { dropped, warns, errs };
+  }
+  function defaultName() { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return 'Fusion' + (settings.project || 'Job').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.nc'; }
+  function renderChecks() {
+    const agg = aggregate(), errs = agg.errs.slice(), warns = [], notes = [], r = result;
+    if (r) {
+      r.errors.forEach((e) => errs.push(e)); r.warnings.forEach((w) => warns.push(w)); agg.warns.forEach((w) => warns.push(w));
+      const st = settings.stock;
+      if (r.bbox.minz < -(st.h + 0.5)) warns.push(`Lowest Z is ${Z.fmt(r.bbox.minz)} mm, deeper than the ${Z.fmt(st.h)} mm stock thickness in the Basic settings. Studio files cut to about 0.2 mm past the stock.`);
+      notes.push(`Z range ${Z.fmt(r.bbox.minz)} to ${Z.fmt(r.bbox.maxz)} mm. Studio treats Z0 as the top of the stock, so the Fusion job should also zero on top.`);
+      const arcs = includedOps.reduce((a, o) => a + o.arcs, 0), segs = includedOps.reduce((a, o) => a + o.arcSegs, 0);
+      if (arcs) notes.push(`${arcs} arcs became ${segs} short straight lines (max error ${settings.tol} mm). Studio output contains only G0 and G1.`);
+      if (settings.fastRapids) notes.push(`${r.ops.reduce((a, o) => a + o.converted, 0)} moves at or above Z${Z.fmt(settings.rapidZ)} were changed to rapids (G0).`);
+      const dk = Object.keys(agg.dropped).filter((k) => !(k === 'M851' || k === 'M852') || settings.stripCarvera);
+      if (dk.length) notes.push('Removed from the Fusion files: ' + dk.map((k) => k + ' ×' + agg.dropped[k]).join(', ') + '. The bundle writes its own M5 / M9 / G28 / M02 at the right places.');
+      toolMap.forEach((tm) => { if (tm.custom) notes.push(`T${tm.slot} ${tm.tool.name} is not in the Z1 tool list, so its header entry uses defaults (3.175 shank, unknown flute length). You can edit its name under Tools.`); });
+      if (settings.wcs === 'omit') notes.push('No G54 line is written, matching Studio. The Z1 runs on its active work offset.');
+    }
+    const ne = errs.length, nw = warns.length, blocked = !r || ne > 0;
+    const li = (cls, tag, list) => list.map((t) => `<li class="${cls}"><span class="tg">${tag}</span><span>${esc(t)}</span></li>`).join('');
+    let body = ne || nw ? `<ul class="checks">${li('err', 'Error', errs)}${li('warn', 'Check', warns)}</ul>` : `<div class="allclear">${icon('check')}<span>${r ? 'Nothing needs your attention. The bundle is ready to export.' : 'Tick at least one toolpath to build a bundle.'}</span></div>`;
+    if (notes.length) body += `<details class="notes"><summary>What the bundler changed (${notes.length})</summary><ul class="checks">${li('', 'Note', notes)}</ul></details>`;
+    $('checks-body').innerHTML = body;
+    $('checks-h').textContent = ne ? plural(ne, 'error') + ' to fix before exporting' : nw ? plural(nw, 'thing') + ' to check' : 'Checks';
+
+    const hp = $('health'); hp.hidden = !items.length;
+    hp.classList.toggle('err', ne > 0); hp.classList.toggle('warn', ne === 0 && nw > 0);
+    $('health-t').textContent = ne ? plural(ne, 'error') : nw ? nw + ' to check' : r ? 'Ready' : 'Nothing included';
+    if (ne > lastErrs) openPop('checks-pop', hp);
+    lastErrs = ne;
+
+    const dl = $('dl'); dl.disabled = blocked;
+    $('dl-sum').textContent = r ? (ne ? 'Fix ' + plural(ne, 'error') + ' first' : `${plural(r.ops.length, 'toolpath')} · ${fmtTime(r.timeSec)}`) : items.length ? 'Nothing included' : 'Add files first';
+    dl.title = blocked ? (ne ? errs[0] : 'Add a toolpath first') : 'Save the bundled program as one .nc file';
+
+    $('grp-sum').hidden = !r;
+    if (r) {
+      const changes = Math.max(0, r.marks.filter((m) => m.change).length - 1);
+      $('stats').innerHTML = `<div><b>${fmtTime(r.timeSec)}</b><span>est. run time</span></div><div><b>${r.ops.length}</b><span>toolpath${r.ops.length === 1 ? '' : 's'}</span></div><div><b>${changes}</b><span>tool change${changes === 1 ? '' : 's'}</span></div><div><b>${(r.totalCut / 1000).toFixed(1)} m</b><span>cutting path</span></div><div><b>${r.lines.length.toLocaleString()}</b><span>lines</span></div><div><b>${fmtSize(r.lines.reduce((a, l) => a + l.length + 2, 0) + (settings.thumbnail ? 60000 : 0))}</b><span>file size</span></div>`;
+    }
+    if (!fileNameEdited) $('fname').value = defaultName();
+    $('fname-auto').hidden = !fileNameEdited;
+    $('save-hint').textContent = FS() ? (srcHandle ? 'Export opens the save dialog in the folder your files came from.' : 'Export opens in the folder of the files you add.') : 'Export saves to your browser\'s download folder.';
+  }
+
+  /* ---------- thumbnail (saved in the file) ---------- */
+  function drawThumb(c, res) {
+    const g = c.getContext('2d'), W = c.width, H = c.height;
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    const bb = res.bbox, pad = 64, bw = Math.max(bb.maxx - bb.minx, 1), bh = Math.max(bb.maxy - bb.miny, 1);
+    const sc = Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh), ox = (W - bw * sc) / 2, oy = (H + bh * sc) / 2;
+    const X = (x) => ox + (x - bb.minx) * sc, Y = (y) => oy - (y - bb.miny) * sc;
+    g.lineWidth = 1; g.strokeStyle = '#e6e9ee'; g.beginPath();
+    const step = bw > 60 ? 10 : 5;
+    for (let gx = Math.ceil(bb.minx / step) * step; gx <= bb.maxx; gx += step) { g.moveTo(X(gx), 32); g.lineTo(X(gx), H - 32); }
+    for (let gy = Math.ceil(bb.miny / step) * step; gy <= bb.maxy; gy += step) { g.moveTo(32, Y(gy)); g.lineTo(W - 32, Y(gy)); }
+    g.stroke();
+    const bySlot = new Map();
+    res.outOps.forEach((o) => {
+      let px = null, py = null, path = bySlot.get(o.slot); if (!path) { path = new Path2D(); bySlot.set(o.slot, path); }
+      o.events.forEach((e) => { if (e.x != null && e.y != null) { if (e.g === 1 && px != null) { path.moveTo(X(px), Y(py)); path.lineTo(X(e.x), Y(e.y)); } px = e.x; py = e.y; } });
+    });
+    g.lineJoin = 'round'; g.lineWidth = 1.6;
+    bySlot.forEach((p, slot) => { g.strokeStyle = colorOf(slot); g.stroke(p); });
+    g.fillStyle = '#46506a'; g.font = '600 22px system-ui, "Segoe UI", sans-serif';
+    g.fillText('X ' + Z.fmt(bb.minx) + ' to ' + Z.fmt(bb.maxx) + ',  Y ' + Z.fmt(bb.miny) + ' to ' + Z.fmt(bb.maxy) + ' mm', 16, H - 16);
+    let lx = 16; res.used.forEach((tm, slot) => { g.fillStyle = colorOf(slot); g.fillRect(lx, 16, 22, 12); g.fillStyle = '#46506a'; g.fillText('T' + slot, lx + 30, 30); lx += 96; });
+  }
+  async function download() {
+    if (!result || $('dl').disabled) return;
+    let b64 = '';
+    if (settings.thumbnail) { const c = document.createElement('canvas'); c.width = 800; c.height = 600; drawThumb(c, result); b64 = c.toDataURL('image/png').split(',')[1] || ''; }
+    const text = result.toText(b64);
+    const blob = new Blob([text], { type: 'application/octet-stream' });
+    const name = ($('fname').value || defaultName()).replace(/[\\/:*?"<>|]+/g, '_');
+    if (FS()) {
+      try {
+        const o = { suggestedName: name, types: [{ description: 'Makera Z1 program', accept: { 'text/plain': ['.nc'] } }] };
+        if (srcHandle) o.startIn = srcHandle; else o.id = 'z1src';
+        const h = await window.showSaveFilePicker(o), w = await h.createWritable();
+        await w.write(blob); await w.close();
+        toast('Saved ' + h.name + ' (' + fmtSize(blob.size) + ')', { ms: 4500 });
+        return;
+      } catch (e) { if (e && e.name === 'AbortError') return; /* otherwise fall back to a normal download */ }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('Saved ' + a.download + ' (' + fmtSize(blob.size) + ')', { ms: 4500 });
+  }
+
+  /* ---------- popovers ---------- */
+  const POPS = ['checks-pop', 'more-pop', 'ops-pop', 'disp-pop', 'keys-pop'];
+  function closePops() { POPS.forEach((id) => { $(id).hidden = true; }); document.querySelectorAll('[data-pop]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+  function openPop(id, btn) {
+    closePops();
+    const p = $(id), r = btn.getBoundingClientRect();
+    p.style.top = Math.round(r.bottom + 6) + 'px';
+    if (r.left + r.width / 2 > window.innerWidth / 2) { p.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px'; p.style.left = 'auto'; }
+    else { p.style.left = Math.max(8, Math.round(r.left)) + 'px'; p.style.right = 'auto'; }
+    p.hidden = false; if (btn.dataset.pop === id) btn.setAttribute('aria-expanded', 'true');
+  }
+  function setTheme(t, persist) {
+    document.documentElement.setAttribute('data-theme', t);
+    $('theme-i').setAttribute('href', t === 'dark' ? '#i-sun' : '#i-moon'); $('theme-t').textContent = t === 'dark' ? 'Light theme' : 'Dark theme';
+    if (persist) { try { localStorage.setItem('z1b.theme', t); } catch (e) { /* ignore */ } }
+    V.redraw();
+  }
+  const ACTIONS = {
+    example: loadExample,
+    theme: () => setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark', true),
+    keys: () => { setTimeout(() => openPop('keys-pop', document.querySelector('[data-pop="more-pop"]')), 0); },
+    sort: () => { items.sort(byOp); orderIds = items.map((i) => i.id); schedule(0); toast('Sorted by Op number'); },
+    all: () => { items.forEach((i) => { if (i.op) i.include = true; }); schedule(0); },
+    clear: () => { const s = snap(); files = []; items = []; orderIds = []; isExample = false; sel = null; schedule(0); toast('Removed all files', { undo: () => restore(s) }); },
+    gclose: () => { ui.gopen = false; applyUI(); }
+  };
+  document.addEventListener('click', (e) => {
+    const d = e.target.closest('[data-do]');
+    if (d) { closePops(); ACTIONS[d.dataset.do](); return; }
+    const b = e.target.closest('[data-pop]');
+    if (b) { const id = b.dataset.pop, was = !$(id).hidden; closePops(); if (!was) openPop(id, b); return; }
+    if (!e.target.closest('.pop')) closePops();
+  });
+  window.addEventListener('resize', closePops);
+
+  /* ---------- events: toolpath list ---------- */
+  $('ops').addEventListener('click', (e) => {
+    const row = e.target.closest('.op'); if (!row) return;
+    const idx = +row.dataset.idx, it = items[idx]; if (!it) return;
+    const a = e.target.closest('[data-act]'), act = a ? a.dataset.act : '';
+    if (act === 'inc') return;
+    if (act === 'rm') { removeItem(it); return; }
+    if (act === 'up') { focusId = it.id; move(idx, idx - 1); return; }
+    if (act === 'down') { focusId = it.id; move(idx, idx + 1); return; }
+    if (act === 'play') { V.seekOp(incIndex(it.id)); V.play(); return; }
+    if (act === 'tool') { const tm = toolMap && toolMap.get(it.op.toolKey); if (tm) { openTools.add(tm.key); renderTools(); const el = document.querySelector('#tools .tl[data-key="' + CSS.escape(tm.key) + '"]'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } return; }
+    if (!it.op || e.target.closest('.opd')) return;
+    setSel(sel === it.id ? null : it.id);
+  });
+  $('ops').addEventListener('change', (e) => { const b = e.target.closest('[data-act="inc"]'); if (!b) return; items[+b.closest('.op').dataset.idx].include = b.checked; schedule(0); });
+  $('ops').addEventListener('dblclick', (e) => {
+    const row = e.target.closest('.op'); if (!row || e.target.closest('input,button,.opd')) return;
+    const it = items[+row.dataset.idx]; if (!it || !it.op || !it.include || !result) return;
+    if (sel !== it.id) setSel(it.id);
+    V.seekOp(incIndex(it.id)); V.play();
+  });
+  $('ops').addEventListener('keydown', (e) => {
+    const row = e.target; if (!row.classList || !row.classList.contains('op')) return;
+    const idx = +row.dataset.idx, it = items[idx]; if (!it) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); const d = e.key === 'ArrowDown' ? 1 : -1;
+      if (e.altKey) { focusId = it.id; move(idx, idx + d); return; }
+      const n = document.querySelectorAll('#ops .op')[idx + d]; if (n) n.focus();
+    } else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (it.op) { focusId = it.id; setSel(sel === it.id ? null : it.id); } }
+    else if (e.key === 'Delete') { e.preventDefault(); removeItem(it); }
+  });
+  let dragIdx = null;
+  $('ops').addEventListener('dragstart', (e) => { const r = e.target.closest && e.target.closest('.op'); if (!r) return; dragIdx = +r.dataset.idx; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'row'); } catch (x) { /* ignore */ } r.classList.add('drag'); });
+  $('ops').addEventListener('dragend', () => { dragIdx = null; document.querySelectorAll('.op.drag,.op.over').forEach((r) => r.classList.remove('drag', 'over')); });
+  $('ops').addEventListener('dragover', (e) => { if (dragIdx == null) return; e.preventDefault(); e.stopPropagation(); document.querySelectorAll('.op.over').forEach((r) => r.classList.remove('over')); const r = e.target.closest('.op'); if (r) r.classList.add('over'); });
+  $('ops').addEventListener('drop', (e) => { if (dragIdx == null) return; e.preventDefault(); e.stopPropagation(); const r = e.target.closest('.op'); if (r) move(dragIdx, +r.dataset.idx); dragIdx = null; });
+
+  /* ---------- events: tools, files, export ---------- */
+  $('tools').addEventListener('click', (e) => { const h = e.target.closest('.tl-h'); if (!h) return; const k = h.parentNode.dataset.key; if (openTools.has(k)) openTools.delete(k); else openTools.add(k); renderTools(); });
+  $('tools').addEventListener('change', toolChange);
+  document.querySelectorAll('.filepick').forEach((el) => el.addEventListener('click', (e) => { if (FS()) { e.preventDefault(); pickFiles(el); } }));
+  document.querySelectorAll('.filepick').forEach((el) => el.addEventListener('change', (e) => { readFiles(e.target.files); e.target.value = ''; }));
+  $('sh-pick').addEventListener('change', (e) => { if (e.target.files[0]) readSheet(e.target.files[0]); e.target.value = ''; });
+  $('sh-rm').addEventListener('click', () => { fusionSheet = null; sheetName = ''; renderSheetState(); });
+  $('sh-dl').addEventListener('click', openSheet);
+  $('dl').addEventListener('click', download);
+  $('fname').addEventListener('input', () => { fileNameEdited = true; $('fname-auto').hidden = false; });
+  $('fname-auto').addEventListener('click', () => { fileNameEdited = false; $('fname').value = defaultName(); $('fname-auto').hidden = true; });
+
+  /* drag and drop anywhere */
+  let dragDepth = 0;
+  const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') >= 0;
+  window.addEventListener('dragenter', (e) => { if (dragIdx != null || !hasFiles(e)) return; e.preventDefault(); dragDepth++; $('veil').classList.add('on'); });
+  window.addEventListener('dragover', (e) => { if (dragIdx != null) return; e.preventDefault(); });
+  window.addEventListener('dragleave', (e) => { if (dragIdx != null || !hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('veil').classList.remove('on'); });
+  window.addEventListener('drop', (e) => { if (dragIdx != null) return; e.preventDefault(); dragDepth = 0; $('veil').classList.remove('on');
+    if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+    const di = Array.from(e.dataTransfer.items || []).find((i) => i.kind === 'file' && i.getAsFileSystemHandle && !/html/i.test(i.type));
+    if (di) di.getAsFileSystemHandle().then((h) => { if (h && h.kind === 'file') { srcHandle = h; renderChecks(); } }).catch(() => {});
+    readFiles(e.dataTransfer.files);
+  });
+
+  /* ---------- panels ---------- */
+  function applyUI() {
+    $('work').classList.toggle('no-right', !ui.right);
+    $('btn-right').setAttribute('aria-pressed', ui.right ? 'true' : 'false'); $('btn-right').classList.toggle('on', ui.right);
+    $('viewer').classList.toggle('gclosed', !ui.gopen); $('gtoggle').classList.toggle('on', ui.gopen); $('gtoggle').setAttribute('aria-pressed', ui.gopen ? 'true' : 'false');
+    $('viewer').style.setProperty('--gh', ui.gh + 'px');
+    $('tab-basic').hidden = ui.tab !== 'basic'; $('tab-adv').hidden = ui.tab !== 'adv';
+    document.querySelectorAll('#mode button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.m === ui.tab ? 'true' : 'false'));
+    saveUI();
+  }
+  $('btn-right').addEventListener('click', () => { ui.right = !ui.right; applyUI(); });
+  $('gtoggle').addEventListener('click', () => { ui.gopen = !ui.gopen; applyUI(); });
+  document.querySelectorAll('#mode button').forEach((b) => b.addEventListener('click', () => { ui.tab = b.dataset.m; applyUI(); $('right').scrollTop = 0; }));
+  $('vcv').addEventListener('pointerdown', () => { if (ui.hint) { ui.hint = false; saveUI(); $('vhint').hidden = true; } });
+  (function splitter() {
+    const sp = $('split'); let d = null;
+    sp.addEventListener('pointerdown', (e) => { d = { y: e.clientY, h: ui.gh }; sp.setPointerCapture(e.pointerId); sp.classList.add('act'); });
+    sp.addEventListener('pointermove', (e) => {
+      if (!d) return; const h = d.h + (d.y - e.clientY), max = Math.max(120, $('viewer').clientHeight - 260);
+      ui.gh = Math.max(90, Math.min(max, Math.round(h))); applyUI();
+    });
+    const end = () => { d = null; sp.classList.remove('act'); }; sp.addEventListener('pointerup', end); sp.addEventListener('pointercancel', end);
+  })();
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closePops(); return; }
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox';
+    if (typing || e.ctrlKey || e.metaKey) return;
+    if (e.key === '?') { const was = !$('keys-pop').hidden; closePops(); if (!was) openPop('keys-pop', document.querySelector('[data-pop="more-pop"]')); }
+  });
+
+  /* ---------- settings ---------- */
+  const bind = [
+    ['s-project', 'project', 'text'], ['s-l', 'stock.l', 'num'], ['s-w', 'stock.w', 'num'], ['s-h', 'stock.h', 'num'],
+    ['s-material', 'material', 'text'], ['s-cam', 'cam', 'text'], ['s-feed', 'maxFeed', 'num'], ['s-rpm', 'maxRpm', 'num'],
+    ['o-tol', 'tol', 'num'], ['o-carv', 'stripCarvera', 'bool'], ['o-wcs', 'wcs', 'text'], ['o-cool', 'coolant', 'bool'],
+    ['o-head', 'header', 'bool'], ['o-thumb', 'thumbnail', 'bool'], ['o-fast', 'fastRapids', 'bool'], ['o-rz', 'rapidZ', 'num'], ['o-crlf', 'crlf', 'bool']
+  ];
+  const ADV = ['header', 'thumbnail', 'material', 'cam', 'tol', 'wcs', 'coolant', 'stripCarvera', 'crlf', 'maxFeed', 'maxRpm'];
+  const getSet = (path) => { const p = path.split('.'); return p.length === 2 ? settings[p[0]][p[1]] : settings[p[0]]; };
+  const setSet = (path, v) => { const p = path.split('.'); if (p.length === 2) settings[p[0]][p[1]] = v; else settings[p[0]] = v; };
+  const fill = () => bind.forEach(([id, path, kind]) => { const el = $(id), v = getSet(path); if (kind === 'bool') el.checked = !!v; else el.value = v; });
+  function renderAdv() {
+    let n = 0;
+    bind.forEach(([id, path]) => { if (ADV.indexOf(path) < 0) return; const ch = settings[path] !== Z.DEFAULTS[path]; $(id).closest('.row').classList.toggle('chg', ch); if (ch) n++; });
+    $('adv-n').hidden = !n; $('adv-n').textContent = n; $('adv-reset').disabled = !n;
+    $('rz-row').hidden = !settings.fastRapids;
+  }
+  fill();
+  bind.forEach(([id, path, kind]) => {
+    const el = $(id);
+    el.addEventListener('input', () => {
+      const nv = kind === 'bool' ? el.checked : kind === 'num' ? parseFloat(el.value) : el.value;
+      if (kind === 'num' && !(nv >= 0)) return;
+      if (path === 'tol' && nv < 0.0005) return;
+      setSet(path, nv); save(); renderAdv();
+      if (path === 'project') fileNameEdited = false;
+      if (path === 'tol') { clearTimeout(timer); timer = setTimeout(() => { reparseAll(); recompute(); }, 350); } else schedule(250);
+    });
+  });
+  $('adv-reset').addEventListener('click', () => {
+    const old = {}; ADV.forEach((k) => { old[k] = settings[k]; settings[k] = Z.DEFAULTS[k]; });
+    const apply = () => { fill(); save(); reparseAll(); recompute(); };
+    apply();
+    toast('Advanced settings reset', { undo: () => { ADV.forEach((k) => { settings[k] = old[k]; }); apply(); } });
+  });
+
+  /* ---------- boot ---------- */
+  V.init();
+  setTheme(document.documentElement.getAttribute('data-theme') || 'dark', false);
+  applyUI();
+  recompute();
+  window.__z1 = { get result() { return result; }, get items() { return items; }, get sel() { return sel; }, addFileObjs, loadExample };
+})();
+</script>
+</body>
+</html>
